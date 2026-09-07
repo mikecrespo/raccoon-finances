@@ -523,8 +523,8 @@
   function renderStatStrip(){
     var c = calcCuenta();
     var html = '';
-    html += '<div class="stat-tile"><div class="label">Apartado</div><div class="value num">' + fmt(c.apartado) + '</div></div>';
-    html += '<div class="stat-tile ' + (c.disponibleReal >= 0 ? 'good' : 'warn') + '"><div class="label">Disponible real</div><div class="value num">' + fmt(c.disponibleReal) + '</div><div class="sub">apartado menos metas y fondos</div></div>';
+    html += '<div class="stat-tile tile-apartado"><div class="label">Apartado</div><div class="value num">' + fmt(c.apartado) + '</div></div>';
+    html += '<div class="stat-tile tile-disponible"><div class="label">Disponible real</div><div class="value num">' + fmt(c.disponibleReal) + '</div><div class="sub">apartado menos metas y fondos</div></div>';
     document.getElementById('stat-strip').innerHTML = html;
   }
   function renderFooter(){
@@ -553,16 +553,14 @@
     var r = resumen();
     var out = '';
 
-    // ---- Este mes (lo que antes salía siempre en la franja de arriba) ----
-    out += '<div class="card"><div class="card-head"><h3>Este mes</h3></div><div class="mini-stats">' +
-      '<div class="stat-tile"><div class="label">Ingreso mensual</div><div class="value num">' + fmt(r.ingresoMensual) + '</div></div>' +
-      '<div class="stat-tile"><div class="label">Gasto mensual</div><div class="value num">' + fmt(r.gastoMensual) + '</div></div>' +
-      '<div class="stat-tile ' + (r.disponible >= 0 ? 'good' : 'warn') + '"><div class="label">Disponible</div><div class="value num">' + fmt(r.disponible) + '</div></div>' +
-      '<div class="stat-tile"><div class="label">Fondo de seguridad</div><div class="value num">' + Math.round(r.fondoPct) + '%</div><div class="sub">' + (r.fondoObjetivo > 0 ? (fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo)) : 'sin objetivo aún') + '</div></div>' +
-      '</div></div>';
-
     if (!state.ingresos.length && !state.gastos.length) {
       out += '<div class="card"><div class="empty-state">Empieza por registrar tus ingresos y gastos fijos en la pestaña "Ingresos y gastos" — de ahí sale todo lo demás.</div></div>';
+    }
+
+    // barra de avance: roja mientras progresa, verde al completarse
+    function barFill(pct){
+      pct = Math.max(0, Math.min(100, pct));
+      return 'width:' + pct + '%;background:' + (pct >= 100 ? 'var(--good)' : 'var(--tile-red)');
     }
 
     // ---- Deudas: barras de avance porcentual ----
@@ -574,7 +572,7 @@
       var pct = pctSaldado(p);
       var overdue = marcaAtraso && p.fechaLimite && p.fechaLimite < hoyISO();
       return '<div class="bar-row"><span class="bar-label">' + escapeHtml(p.nombre) + '</span>' +
-        '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="bar-track"><span class="bar-fill" style="' + barFill(pct) + '"></span></span>' +
         '<span class="bar-value num"' + (overdue ? ' style="color:var(--warn)"' : '') + '>' + Math.round(pct) + '%</span></div>';
     }
     var deudasActivas = state.pendientes.filter(function(p){ return !p.resuelto && p.tipo !== 'cobrar'; })
@@ -610,8 +608,9 @@
     else {
       metasOrden.forEach(function(m){
         var pct = m.montoObjetivo > 0 ? Math.min(100, m.montoActual / m.montoObjetivo * 100) : (m.completada ? 100 : 0);
+        if (m.completada) pct = 100;
         out += '<div class="bar-row"><span class="bar-label">' + escapeHtml(m.nombre) + (m.completada ? ' ✓' : '') + '</span>' +
-          '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%' + (m.completada ? ';background:var(--good)' : '') + '"></span></span>' +
+          '<span class="bar-track"><span class="bar-fill" style="' + barFill(pct) + '"></span></span>' +
           '<span class="bar-value num">' + Math.round(pct) + '%</span></div>';
       });
     }
@@ -637,6 +636,15 @@
         '</div>';
     }
     out += '</div>';
+
+    // ---- Este mes (al final del resumen) ----
+    out += '<div class="card"><div class="card-head"><h3>Este mes</h3></div><div class="mini-stats">' +
+      '<div class="stat-tile"><div class="label">Ingreso mensual</div><div class="value num">' + fmt(r.ingresoMensual) + '</div></div>' +
+      '<div class="stat-tile"><div class="label">Gasto mensual</div><div class="value num">' + fmt(r.gastoMensual) + '</div></div>' +
+      '<div class="stat-tile ' + (r.disponible >= 0 ? 'good' : 'warn') + '"><div class="label">Disponible</div><div class="value num">' + fmt(r.disponible) + '</div></div>' +
+      '<div class="stat-tile"><div class="label">Fondo de seguridad</div><div class="value num">' + Math.round(r.fondoPct) + '%</div><div class="sub">' + (r.fondoObjetivo > 0 ? (fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo)) : 'sin objetivo aún') + '</div></div>' +
+      '</div></div>';
+
     document.getElementById('view-resumen').innerHTML = out;
   }
 
@@ -921,33 +929,30 @@
     renderHistorial();
   }
 
-  /* ---------- indicador de sincronización ---------- */
+  /* ---------- indicador de sincronización (punto de color, sin texto) ---------- */
   function renderSync(code){
-    var pill = document.getElementById('sync-pill');
+    var dot = document.getElementById('sync-pill');
     var signout = document.getElementById('btn-signout');
     var bannerLocal = document.getElementById('banner-local');
     var bannerNoSave = document.getElementById('banner-nosave');
     var map = {
-      connecting:   { txt: 'Conectando…',            cls: '' },
-      synced:       { txt: 'Sincronizado',           cls: 'ok' },
-      pending:      { txt: 'Guardando…',             cls: 'wait' },
-      offline:      { txt: 'Sin conexión',           cls: 'off' },
-      'local-only': { txt: 'Solo este dispositivo',  cls: '' },
-      'signed-out': { txt: '',                       cls: '' },
-      error:        { txt: 'Error de sincronización', cls: 'off' },
-      nosave:       { txt: 'No se pudo guardar',     cls: 'off' }
+      connecting:   { cls: '',     txt: 'Conectando…' },
+      synced:       { cls: 'ok',   txt: 'Sincronizado' },
+      pending:      { cls: 'wait', txt: 'Guardando…' },
+      offline:      { cls: 'off',  txt: 'Sin conexión — se guardó en este dispositivo y se subirá al reconectar' },
+      'local-only': { cls: '',     txt: 'Solo este dispositivo (sin sincronización configurada)' },
+      'signed-out': { cls: '',     txt: '' },
+      error:        { cls: 'off',  txt: 'Error de sincronización' },
+      nosave:       { cls: 'off',  txt: 'No se pudo guardar' }
     };
     var m = map[code] || map.connecting;
 
-    if (code === 'signed-out') { pill.classList.add('hidden'); return; }
-    pill.classList.remove('hidden');
-    pill.textContent = m.txt;
-    pill.className = 'sync-pill ' + m.cls;
-    pill.title = code === 'offline'
-      ? 'Tus cambios se guardaron en este dispositivo y se subirán al reconectar.'
-      : code === 'local-only'
-        ? 'La sincronización con la nube no está configurada — los datos viven solo aquí.'
-        : '';
+    if (code === 'signed-out') { dot.classList.add('hidden'); }
+    else {
+      dot.classList.remove('hidden');
+      dot.className = 'sync-dot ' + m.cls;
+      dot.title = m.txt;
+    }
 
     if (bannerNoSave) bannerNoSave.classList.toggle('hidden', code !== 'nosave');
     if (bannerLocal && code === 'local-only' && RaccoonStore.mode() === 'local') {
