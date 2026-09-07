@@ -67,7 +67,7 @@ header.top{ padding:36px 0 0; display:flex; justify-content:space-between; align
 .banner.hidden{ display:none; }
 .banner button{ background:none; border:none; color:inherit; cursor:pointer; font-size:12px; text-decoration:underline; padding:0; flex-shrink:0; }
 
-.stat-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:24px; }
+.stat-strip{ display:grid; grid-template-columns:repeat(2,1fr); gap:12px; margin-top:24px; }
 .stat-tile{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow); }
 .stat-tile .label{ font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; color:var(--ink-faint); }
 .stat-tile .value{ font-size:21px; font-weight:700; margin-top:6px; }
@@ -148,6 +148,9 @@ td.num, th.num{ text-align:right; }
 .bar-track{ flex:1; height:7px; background:var(--line-soft); border-radius:5px; overflow:hidden; }
 .bar-fill{ height:100%; background:var(--accent); border-radius:5px; }
 .bar-value{ width:78px; text-align:right; flex-shrink:0; color:var(--ink-soft); }
+
+.group-label{ font-size:11px; text-transform:uppercase; letter-spacing:.4px; color:var(--ink-faint); font-weight:600; margin:0 0 9px; }
+.bar-row + .group-label{ margin-top:16px; }
 
 .mini-stats{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:14px; }
 .cal-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }

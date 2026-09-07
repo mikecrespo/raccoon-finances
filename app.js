@@ -172,7 +172,11 @@
       closeModal();
       onSave(out);
     };
-    setTimeout(function(){ var first = box.querySelector('input,select'); if (first) first.focus(); }, 30);
+    // En pantallas táctiles NO enfocamos solos: el teclado solo aparece si tú tocas un campo.
+    var esTactil = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (!esTactil) {
+      setTimeout(function(){ var first = box.querySelector('input,select'); if (first) first.focus(); }, 30);
+    }
   }
   function closeModal(){ document.getElementById('modal-overlay').classList.add('hidden'); }
 
@@ -500,14 +504,27 @@
   }
 
   /* ---------- render: franja de resumen y pie ---------- */
+  /* datos de la "Cuenta bancaria" (apartado) — compartidos por la franja de arriba y la pestaña Metas */
+  function calcCuenta(){
+    var cb = state.cuentaBancaria || {};
+    var apartado = Number(cb.apartado) || 0;
+    var dedicadoAMetas = state.metas.reduce(function(s, m){ return s + (Number(m.montoActual) || 0); }, 0);
+    var dedicadoAFondoSeguridad = Number(state.fondoEmergencia.montoActual) || 0;
+    var dedicadoAFondosAdicionales = state.fondosAdicionales.reduce(function(s, f){ return s + (Number(f.montoActual) || 0); }, 0);
+    var dedicadoAFondos = dedicadoAFondoSeguridad + dedicadoAFondosAdicionales;
+    var disponibleReal = apartado - (dedicadoAMetas + dedicadoAFondos);
+    return {
+      apartado: apartado, dedicadoAMetas: dedicadoAMetas,
+      dedicadoAFondoSeguridad: dedicadoAFondoSeguridad, dedicadoAFondosAdicionales: dedicadoAFondosAdicionales,
+      dedicadoAFondos: dedicadoAFondos, disponibleReal: disponibleReal
+    };
+  }
+
   function renderStatStrip(){
-    var r = resumen();
+    var c = calcCuenta();
     var html = '';
-    html += '<div class="stat-tile"><div class="label">Ingreso mensual</div><div class="value num">' + fmt(r.ingresoMensual) + '</div></div>';
-    html += '<div class="stat-tile"><div class="label">Gasto mensual</div><div class="value num">' + fmt(r.gastoMensual) + '</div></div>';
-    html += '<div class="stat-tile ' + (r.disponible >= 0 ? 'good' : 'warn') + '"><div class="label">Disponible</div><div class="value num">' + fmt(r.disponible) + '</div></div>';
-    var fondoSub = r.fondoObjetivo > 0 ? (fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo)) : 'sin objetivo aún';
-    html += '<div class="stat-tile"><div class="label">Fondo de seguridad</div><div class="value num">' + Math.round(r.fondoPct) + '%</div><div class="sub">' + fondoSub + '</div></div>';
+    html += '<div class="stat-tile"><div class="label">Apartado</div><div class="value num">' + fmt(c.apartado) + '</div></div>';
+    html += '<div class="stat-tile ' + (c.disponibleReal >= 0 ? 'good' : 'warn') + '"><div class="label">Disponible real</div><div class="value num">' + fmt(c.disponibleReal) + '</div><div class="sub">apartado menos metas y fondos</div></div>';
     document.getElementById('stat-strip').innerHTML = html;
   }
   function renderFooter(){
@@ -535,35 +552,67 @@
   function renderResumen(){
     var r = resumen();
     var out = '';
+
+    // ---- Este mes (lo que antes salía siempre en la franja de arriba) ----
+    out += '<div class="card"><div class="card-head"><h3>Este mes</h3></div><div class="mini-stats">' +
+      '<div class="stat-tile"><div class="label">Ingreso mensual</div><div class="value num">' + fmt(r.ingresoMensual) + '</div></div>' +
+      '<div class="stat-tile"><div class="label">Gasto mensual</div><div class="value num">' + fmt(r.gastoMensual) + '</div></div>' +
+      '<div class="stat-tile ' + (r.disponible >= 0 ? 'good' : 'warn') + '"><div class="label">Disponible</div><div class="value num">' + fmt(r.disponible) + '</div></div>' +
+      '<div class="stat-tile"><div class="label">Fondo de seguridad</div><div class="value num">' + Math.round(r.fondoPct) + '%</div><div class="sub">' + (r.fondoObjetivo > 0 ? (fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo)) : 'sin objetivo aún') + '</div></div>' +
+      '</div></div>';
+
     if (!state.ingresos.length && !state.gastos.length) {
       out += '<div class="card"><div class="empty-state">Empieza por registrar tus ingresos y gastos fijos en la pestaña "Ingresos y gastos" — de ahí sale todo lo demás.</div></div>';
     }
-    var deudasActivas = state.pendientes.filter(function(p){ return !p.resuelto && p.tipo !== 'cobrar'; });
+
+    // ---- Deudas: barras de avance porcentual ----
+    function pctSaldado(p){
+      var orig = Number(p.montoOriginal) || Number(p.saldoActual) || 1;
+      return Math.max(0, Math.min(100, (1 - Number(p.saldoActual) / orig) * 100));
+    }
+    function barraDeuda(p, marcaAtraso){
+      var pct = pctSaldado(p);
+      var overdue = marcaAtraso && p.fechaLimite && p.fechaLimite < hoyISO();
+      return '<div class="bar-row"><span class="bar-label">' + escapeHtml(p.nombre) + '</span>' +
+        '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+        '<span class="bar-value num"' + (overdue ? ' style="color:var(--warn)"' : '') + '>' + Math.round(pct) + '%</span></div>';
+    }
+    var deudasActivas = state.pendientes.filter(function(p){ return !p.resuelto && p.tipo !== 'cobrar'; })
+      .sort(function(a, b){ return (a.fechaLimite || '9999') < (b.fechaLimite || '9999') ? -1 : 1; });
     var cobrosActivos = state.pendientes.filter(function(p){ return !p.resuelto && p.tipo === 'cobrar'; });
     var totalDeuda = deudasActivas.reduce(function(s, p){ return s + Number(p.saldoActual); }, 0);
-    var totalCobrar = cobrosActivos.reduce(function(s, p){ return s + Number(p.saldoActual); }, 0);
-    var deudasTop = deudasActivas.slice().sort(function(a, b){ return (a.fechaLimite || '9999') < (b.fechaLimite || '9999') ? -1 : 1; }).slice(0, 4);
-    out += '<div class="card"><div class="card-head"><h3>Deudas</h3>' + (deudasActivas.length ? '<span class="meta num">' + fmt(totalDeuda) + '</span>' : '') + '</div>';
-    if (cobrosActivos.length) {
-      out += '<div class="mini-stats"><div class="stat-tile good"><div class="label">Por cobrar</div><div class="value num">' + fmt(totalCobrar) + '</div><div class="sub">te deben, no es una deuda tuya</div></div></div>';
-    }
-    if (!deudasTop.length) { out += '<div class="empty-state">No tienes deudas activas. 🎉</div>'; }
-    else {
-      deudasTop.forEach(function(p){
-        var overdue = p.fechaLimite && p.fechaLimite < hoyISO();
-        out += '<div class="bar-row"><span class="bar-label">' + escapeHtml(p.nombre) + '</span><span class="bar-track"><span class="bar-fill" style="width:' + Math.round((1 - p.saldoActual / (p.montoOriginal || p.saldoActual || 1)) * 100) + '%"></span></span><span class="bar-value num" style="' + (overdue ? 'color:var(--warn)' : '') + '">' + fmt(p.saldoActual) + '</span></div>';
-      });
+    out += '<div class="card"><div class="card-head"><h3>Deudas</h3>' + (deudasActivas.length ? '<span class="meta num">' + fmt(totalDeuda) + ' por pagar</span>' : '') + '</div>';
+    if (!deudasActivas.length && !cobrosActivos.length) {
+      out += '<div class="empty-state">No tienes deudas activas. 🎉</div>';
+    } else {
+      if (deudasActivas.length) {
+        out += '<div class="group-label">Por pagar · cuánto llevas pagado</div>';
+        deudasActivas.forEach(function(p){ out += barraDeuda(p, true); });
+      }
+      if (cobrosActivos.length) {
+        out += '<div class="group-label">Te deben · cuánto te han pagado</div>';
+        cobrosActivos.forEach(function(p){ out += barraDeuda(p, false); });
+      }
     }
     out += '</div>';
-    var metasActivas = state.metas.filter(function(m){ return !m.completada; });
-    var faltantePorCompletar = metasActivas.reduce(function(s, m){ return s + Math.max(0, Number(m.montoObjetivo) - Number(m.montoActual)); }, 0);
-    var metasTop = metasActivas.slice().sort(function(a, b){ return (b.montoActual / b.montoObjetivo) - (a.montoActual / a.montoObjetivo); }).slice(0, 4);
-    out += '<div class="card"><div class="card-head"><h3>Ahorros</h3>' + (metasActivas.length ? '<span class="meta">falta ' + '<span class="num">' + fmt(faltantePorCompletar) + '</span></span>' : '') + '</div>';
-    if (!metasTop.length) { out += '<div class="empty-state">Aún no tienes metas de ahorro activas.</div>'; }
+
+    // ---- Ahorros: TODAS las metas (completas incluidas), con barra de avance ----
+    var metasFalta = state.metas.filter(function(m){ return !m.completada; })
+      .reduce(function(s, m){ return s + Math.max(0, Number(m.montoObjetivo) - Number(m.montoActual)); }, 0);
+    var metasOrden = state.metas.slice().sort(function(a, b){
+      if (!!a.completada !== !!b.completada) return a.completada ? 1 : -1;
+      var pa = a.montoObjetivo > 0 ? a.montoActual / a.montoObjetivo : 0;
+      var pb = b.montoObjetivo > 0 ? b.montoActual / b.montoObjetivo : 0;
+      return pb - pa;
+    });
+    out += '<div class="card"><div class="card-head"><h3>Ahorros</h3>' + (metasFalta > 0 ? '<span class="meta">falta <span class="num">' + fmt(metasFalta) + '</span></span>' : '') + '</div>';
+    if (!metasOrden.length) { out += '<div class="empty-state">Aún no tienes metas de ahorro.</div>'; }
     else {
-      metasTop.forEach(function(m){
-        var pct = m.montoObjetivo > 0 ? Math.min(100, m.montoActual / m.montoObjetivo * 100) : 0;
-        out += '<div class="bar-row"><span class="bar-label">' + escapeHtml(m.nombre) + '</span><span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span><span class="bar-value num">' + Math.round(pct) + '%</span></div>';
+      metasOrden.forEach(function(m){
+        var pct = m.montoObjetivo > 0 ? Math.min(100, m.montoActual / m.montoObjetivo * 100) : (m.completada ? 100 : 0);
+        out += '<div class="bar-row"><span class="bar-label">' + escapeHtml(m.nombre) + (m.completada ? ' ✓' : '') + '</span>' +
+          '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%' + (m.completada ? ';background:var(--good)' : '') + '"></span></span>' +
+          '<span class="bar-value num">' + Math.round(pct) + '%</span></div>';
       });
     }
     out += '</div>';
@@ -692,14 +741,11 @@
   /* ---------- render: metas y fondo ---------- */
   function renderMetas(){
     var r = resumen();
-    var cb = state.cuentaBancaria;
-    var apartado = Number(cb.apartado) || 0;
-    var dedicadoAMetas = state.metas.reduce(function(s, m){ return s + (Number(m.montoActual) || 0); }, 0);
-    var dedicadoAFondoSeguridad = Number(state.fondoEmergencia.montoActual) || 0;
-    var dedicadoAFondosAdicionales = state.fondosAdicionales.reduce(function(s, f){ return s + (Number(f.montoActual) || 0); }, 0);
-    var dedicadoAFondos = dedicadoAFondoSeguridad + dedicadoAFondosAdicionales;
-    var dedicadoTotal = dedicadoAMetas + dedicadoAFondos;
-    var disponibleReal = apartado - dedicadoTotal;
+    var cta = calcCuenta();
+    var apartado = cta.apartado;
+    var dedicadoAMetas = cta.dedicadoAMetas;
+    var dedicadoAFondos = cta.dedicadoAFondos;
+    var disponibleReal = cta.disponibleReal;
     var out = '<div class="card"><div class="card-head"><h3>Cuenta bancaria</h3><span class="meta">apartado</span></div>';
     out += '<div class="mini-stats">' +
       '<div class="stat-tile"><div class="label">Apartado</div><div class="value num">' + fmt(apartado) + '</div></div>' +
