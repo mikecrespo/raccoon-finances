@@ -79,6 +79,8 @@
   function montoMensual(item){
     return item.frecuencia === 'quincenal' ? Number(item.monto) * 2 : Number(item.monto);
   }
+  /* color de cualquier avance: rojo mientras progresa, verde al completarse */
+  function pctColor(pct){ return (Number(pct) >= 100) ? 'var(--good)' : 'var(--tile-red)'; }
   function toast(msg){
     var t = document.getElementById('toast');
     t.textContent = msg;
@@ -541,12 +543,13 @@
   }
 
   /* ---------- render: resumen ---------- */
-  function ringSvg(pct, colorVar){
+  function ringSvg(pct, color){
     pct = Math.max(0, Math.min(100, pct));
+    if (!color) color = pctColor(pct);
     var r = 46, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
     return '<svg width="104" height="104" viewBox="0 0 104 104">' +
       '<circle cx="52" cy="52" r="' + r + '" fill="none" stroke="var(--line)" stroke-width="10"></circle>' +
-      '<circle cx="52" cy="52" r="' + r + '" fill="none" stroke="var(--' + colorVar + ')" stroke-width="10" ' +
+      '<circle cx="52" cy="52" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="10" ' +
       'stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + off + '"></circle></svg>';
   }
   function renderResumen(){
@@ -560,7 +563,7 @@
     // barra de avance: roja mientras progresa, verde al completarse
     function barFill(pct){
       pct = Math.max(0, Math.min(100, pct));
-      return 'width:' + pct + '%;background:' + (pct >= 100 ? 'var(--good)' : 'var(--tile-red)');
+      return 'width:' + pct + '%;background:' + pctColor(pct);
     }
 
     // ---- Deudas: barras de avance porcentual ----
@@ -619,7 +622,7 @@
     var totalFondosSeguridad = r.fondoActual + totalFondosAdicionales;
     out += '<div class="card"><div class="card-head"><h3>Fondos</h3>' + (totalFondosAdicionales > 0 ? '<span class="meta num">' + fmt(totalFondosSeguridad) + ' total</span>' : '') + '</div>';
     out += '<div class="goal-grid"><div class="goal-card' + (r.fondoObjetivo > 0 && r.fondoActual >= r.fondoObjetivo ? ' completada' : '') + '">' +
-      '<h4>Fondo de seguridad</h4><div class="ring-wrap">' + ringSvg(r.fondoPct, 'good') + '<div class="ring-center">' + Math.round(r.fondoPct) + '%</div></div>' +
+      '<h4>Fondo de seguridad</h4><div class="ring-wrap">' + ringSvg(r.fondoPct) + '<div class="ring-center">' + Math.round(r.fondoPct) + '%</div></div>' +
       '<div class="goal-amounts">' + fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo) + '</div>' +
       '</div></div>';
     if (totalFondosAdicionales > 0) {
@@ -698,7 +701,7 @@
     return '<div class="pending-card"><div class="pending-top"><h4>' + escapeHtml(p.nombre) + '</h4>' +
       (p.fechaLimite ? '<span class="pending-due' + (overdue ? '' : ' ok') + '">' + (overdue ? 'venció ' : 'vence ') + fechaCorta(p.fechaLimite) + '</span>' : '') + '</div>' +
       (sub.length ? '<div class="pending-sub" style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">' + sub.join(' · ') + '</div>' : '') +
-      '<div class="bar-row" style="margin-bottom:0"><span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span></span>' +
+      '<div class="bar-row" style="margin-bottom:0"><span class="bar-track"><span class="bar-fill" style="width:' + pct + '%;background:' + pctColor(pct) + '"></span></span>' +
       '<span class="bar-value num">' + fmt(p.saldoActual) + ' / ' + fmt(p.montoOriginal) + '</span></div>' +
       '<div class="pending-actions">' +
       '<button class="icon-btn" data-act="aportar-pendiente" data-id="' + p.id + '">Aportar</button>' +
@@ -768,7 +771,7 @@
 
     out += '<div class="card"><div class="card-head"><h3>Fondos</h3><button class="add-btn accent" id="btn-add-fondo-adicional">+ Fondo</button></div>';
     out += '<div class="goal-grid"><div class="goal-card' + (r.fondoObjetivo > 0 && r.fondoActual >= r.fondoObjetivo ? ' completada' : '') + '">' +
-      '<h4>Fondo de seguridad</h4><div class="ring-wrap">' + ringSvg(r.fondoPct, 'good') + '<div class="ring-center">' + Math.round(r.fondoPct) + '%</div></div>' +
+      '<h4>Fondo de seguridad</h4><div class="ring-wrap">' + ringSvg(r.fondoPct) + '<div class="ring-center">' + Math.round(r.fondoPct) + '%</div></div>' +
       '<div class="goal-amounts">' + fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo) + '</div>' +
       '<div class="goal-actions"><button class="icon-btn" id="btn-aportar-fondo">Aportar</button><button class="icon-btn" id="btn-retirar-fondo">Retirar</button><button class="icon-btn" id="btn-editar-fondo">Objetivo</button></div>' +
       '</div>';
@@ -777,7 +780,7 @@
       var fPct = fObjetivo > 0 ? Math.min(100, Number(f.montoActual) / fObjetivo * 100) : 0;
       var fAmounts = fObjetivo > 0 ? (fmt(f.montoActual) + ' de ' + fmt(fObjetivo)) : (fmt(f.montoActual) + ' — sin objetivo');
       out += '<div class="goal-card' + (fObjetivo > 0 && f.montoActual >= fObjetivo ? ' completada' : '') + '"><h4>' + escapeHtml(f.nombre) + '</h4>' +
-        '<div class="ring-wrap">' + ringSvg(fPct, 'good') + '<div class="ring-center">' + Math.round(fPct) + '%</div></div>' +
+        '<div class="ring-wrap">' + ringSvg(fPct) + '<div class="ring-center">' + Math.round(fPct) + '%</div></div>' +
         '<div class="goal-amounts">' + fAmounts + '</div>' +
         '<div class="goal-actions">' +
         '<button class="icon-btn" data-act="aportar-fondo-adicional" data-id="' + f.id + '">Aportar</button>' +
@@ -799,7 +802,7 @@
       state.metas.forEach(function(m){
         var pct = m.montoObjetivo > 0 ? Math.min(100, m.montoActual / m.montoObjetivo * 100) : 0;
         out += '<div class="goal-card' + (m.completada ? ' completada' : '') + '"><h4>' + escapeHtml(m.nombre) + '</h4>' +
-          '<div class="ring-wrap">' + ringSvg(pct, 'accent') + '<div class="ring-center">' + Math.round(pct) + '%</div></div>' +
+          '<div class="ring-wrap">' + ringSvg(pct) + '<div class="ring-center">' + Math.round(pct) + '%</div></div>' +
           '<div class="goal-amounts">' + fmt(m.montoActual) + ' de ' + fmt(m.montoObjetivo) + '</div>' +
           '<div class="goal-actions">' +
           (m.completada ? '' : '<button class="icon-btn" data-act="aportar-meta" data-id="' + m.id + '">Aportar</button>') +
