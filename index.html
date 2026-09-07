@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Raccoon Finances</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Tus finanzas personales, en orden.">
+
+<meta name="theme-color" content="#EEF0E8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Raccoon">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/favicon.png" sizes="any">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="auth-gate hidden" id="auth-gate">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img src="icons/icon-192.png" alt="">
+      <h1>Raccoon Finances</h1>
+    </div>
+    <p class="auth-msg" id="auth-msg">Inicia sesión para ver y sincronizar tus finanzas.</p>
+    <div class="field">
+      <label for="auth-email">Correo</label>
+      <input id="auth-email" type="email" autocomplete="username" inputmode="email" autocapitalize="off" spellcheck="false">
+    </div>
+    <div class="field">
+      <label for="auth-pass">Contraseña</label>
+      <input id="auth-pass" type="password" autocomplete="current-password">
+    </div>
+    <button class="add-btn accent" id="auth-submit">Entrar</button>
+    <div class="auth-alt">
+      <button class="auth-link" id="auth-toggle">Crear una cuenta</button>
+      <button class="auth-link" id="auth-forgot">Olvidé mi contraseña</button>
+    </div>
+    <p class="auth-err" id="auth-err"></p>
+    <p class="auth-note">Tus datos quedan guardados también en este dispositivo, así que la app funciona sin conexión una vez que entras.</p>
+  </div>
+</div>
+
+<div id="app-root">
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <img class="brand-mark" src="icons/brand-mark.png" alt="">
+      <h1>Raccoon Finances</h1>
+      <span class="tag">tus finanzas, en orden</span>
+    </div>
+    <div class="top-actions">
+      <span class="sync-pill hidden" id="sync-pill" title="">Cargando…</span>
+      <button class="ghost-btn" id="btn-export">Exportar respaldo</button>
+      <button class="ghost-btn" id="btn-import">Importar respaldo</button>
+      <button class="ghost-btn hidden" id="btn-signout">Cerrar sesión</button>
+      <input type="file" id="file-import" accept="application/json" style="display:none">
+    </div>
+  </header>
+
+  <div class="banner warn hidden" id="banner-nosave">
+    <span>Este navegador no permite guardar los cambios aquí. Usa "Exportar respaldo" para no perder lo que captures.</span>
+    <button id="banner-dismiss">Entendido</button>
+  </div>
+
+  <div class="banner info hidden" id="banner-local">
+    <span>Versión local — tus cambios se guardan solo en este dispositivo. Configura la sincronización para verlos también en tus otros equipos.</span>
+    <button id="banner-local-dismiss">Entendido</button>
+  </div>
+
+  <div class="stat-strip" id="stat-strip"></div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="resumen">Resumen</button>
+    <button data-tab="flujo">Ingresos y gastos</button>
+    <button data-tab="pendientes">Deudas</button>
+    <button data-tab="metas">Metas y fondo</button>
+    <button data-tab="decide">¿Lo compro?</button>
+    <button data-tab="historial">Historial</button>
+  </nav>
+
+  <main>
+    <section class="view" id="view-resumen"></section>
+    <section class="view" id="view-flujo"></section>
+    <section class="view" id="view-pendientes"></section>
+    <section class="view" id="view-metas"></section>
+    <section class="view" id="view-decide"></section>
+    <section class="view" id="view-historial"></section>
+  </main>
+
+  <footer class="foot" id="foot">Cargando…</footer>
+</div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal" id="modal-box"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="firebase-config.js"></script>
+<script src="vendor/firebase-app-compat.js"></script>
+<script src="vendor/firebase-auth-compat.js"></script>
+<script src="vendor/firebase-firestore-compat.js"></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('sw.js').catch(function(){ /* sin service worker: la app sigue funcionando */ });
+    });
+  }
+</script>
+</body>
+</html>
