@@ -1,6 +1,6 @@
 /* Service worker de Raccoon Finances.
  * Sube el número de versión (CACHE) cada vez que cambies archivos del "shell". */
-const CACHE = 'raccoon-v7';
+const CACHE = 'raccoon-v8';
 
 const SHELL = [
   './',
@@ -18,7 +18,8 @@ const SHELL = [
   './icons/icon-maskable-512.png',
   './icons/apple-touch-icon.png',
   './icons/favicon.png',
-  './icons/brand-mark.png'
+  './icons/brand-mark.png',
+  './icons/raccoon-dance.png'
 ];
 
 self.addEventListener('install', (e) => {

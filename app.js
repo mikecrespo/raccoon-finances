@@ -13,12 +13,28 @@
   var SEED_STATE = null;
 
   /* ---------- estado ---------- */
+  var CATEGORIAS_DEFAULT = [
+    'Súper / Despensa', 'Restaurantes / Antojos', 'Transporte', 'Servicios / Casa',
+    'Suscripciones', 'Salud', 'Personal / Cuidado', 'Entretenimiento / Salidas',
+    'Regalos / Detalles', 'Otros'
+  ];
+  var TITULOS_DEFAULT = {
+    cuentaBancaria: 'Cuenta bancaria',
+    fondos: 'Fondos',
+    metasAhorro: 'Metas de ahorro',
+    inversiones: 'Inversiones',
+    deudasPagar: 'Deudas por pagar',
+    deudasCobrar: 'Deudas por cobrar'
+  };
   function estadoVacio(){
     return {
       ingresos: [], gastos: [], pendientes: [], metas: [],
-      fondoEmergencia: { montoObjetivo: 0, montoActual: 0, aportes: [] },
+      fondoEmergencia: { montoObjetivo: 0, montoActual: 0, aportes: [], fechaObjetivo: '' },
       fondosAdicionales: [],
       inversiones: [], decisiones: [],
+      movimientos: [],
+      categorias: CATEGORIAS_DEFAULT.slice(),
+      titulos: {},
       cuentaBancaria: { apartado: 0, saldoPrincipal: 0, pisoSaldoPrincipal: 3000 },
       historialMensual: {},
       ultimaActualizacion: ""
@@ -26,9 +42,9 @@
   }
   function normalizarEstado(){
     state.cuentaBancaria = Object.assign({ apartado: 0, saldoPrincipal: 0, pisoSaldoPrincipal: 3000 }, state.cuentaBancaria || {});
-    state.fondoEmergencia = Object.assign({ montoObjetivo: 0, montoActual: 0, aportes: [] }, state.fondoEmergencia || {});
+    state.fondoEmergencia = Object.assign({ montoObjetivo: 0, montoActual: 0, aportes: [], fechaObjetivo: '' }, state.fondoEmergencia || {});
     if (!Array.isArray(state.fondosAdicionales)) state.fondosAdicionales = [];
-    state.fondosAdicionales.forEach(function(f){ if (!Array.isArray(f.aportes)) f.aportes = []; if (f.montoActual == null) f.montoActual = 0; if (f.montoObjetivo == null) f.montoObjetivo = 0; });
+    state.fondosAdicionales.forEach(function(f){ if (!Array.isArray(f.aportes)) f.aportes = []; if (f.montoActual == null) f.montoActual = 0; if (f.montoObjetivo == null) f.montoObjetivo = 0; if (f.fechaObjetivo == null) f.fechaObjetivo = ''; });
     if (!state.historialMensual || typeof state.historialMensual !== 'object') state.historialMensual = {};
     if (!Array.isArray(state.ingresos)) state.ingresos = [];
     if (!Array.isArray(state.gastos)) state.gastos = [];
@@ -36,15 +52,20 @@
     if (!Array.isArray(state.metas)) state.metas = [];
     if (!Array.isArray(state.inversiones)) state.inversiones = [];
     if (!Array.isArray(state.decisiones)) state.decisiones = [];
-    state.metas.forEach(function(m){ if (!Array.isArray(m.aportes)) m.aportes = []; });
+    if (!Array.isArray(state.movimientos)) state.movimientos = [];
+    if (!Array.isArray(state.categorias) || !state.categorias.length) state.categorias = CATEGORIAS_DEFAULT.slice();
+    if (!state.titulos || typeof state.titulos !== 'object') state.titulos = {};
+    state.metas.forEach(function(m){ if (!Array.isArray(m.aportes)) m.aportes = []; if (m.fechaObjetivo == null) m.fechaObjetivo = ''; });
     state.pendientes.forEach(function(p){
       if (!Array.isArray(p.pagos)) p.pagos = [];
       if (p.tipo !== 'pagar' && p.tipo !== 'cobrar') p.tipo = 'pagar';
       if (p.motivo == null) p.motivo = '';
       if (p.quien == null) p.quien = '';
     });
-    state.inversiones.forEach(function(i){ if (i.tasaInteres == null) i.tasaInteres = 0; if (!Array.isArray(i.reinversiones)) i.reinversiones = []; });
+    state.inversiones.forEach(function(i){ if (i.tasaInteres == null) i.tasaInteres = 0; if (!Array.isArray(i.reinversiones)) i.reinversiones = []; if (i.fechaObjetivo == null) i.fechaObjetivo = ''; });
+    state.movimientos.forEach(function(g){ if (g.motivo == null) g.motivo = ''; if (g.categoria == null) g.categoria = 'Otros'; if (!g.fecha) g.fecha = hoyISO(); if (g.monto == null) g.monto = 0; });
   }
+  function tituloDe(key){ return (state.titulos && state.titulos[key]) || TITULOS_DEFAULT[key]; }
 
   var state = estadoVacio();
   var dataLoaded = false;
@@ -81,6 +102,56 @@
   }
   /* color de cualquier avance: rojo mientras progresa, verde al completarse */
   function pctColor(pct){ return (Number(pct) >= 100) ? 'var(--good)' : 'var(--tile-red)'; }
+
+  var MESES_CORTO = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  function mesLegible(ym){
+    var p = String(ym).split('-');
+    var m = parseInt(p[1], 10) - 1;
+    return (MESES_CORTO[m] || '?') + ' ' + p[0];
+  }
+  function fechaLarga(iso){
+    if (!iso) return '';
+    var d = new Date(iso + 'T00:00:00');
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  /* texto "faltan X meses" / "atrasada" para una fecha objetivo */
+  function faltanTexto(fechaObjetivo, completo){
+    if (!fechaObjetivo) return '';
+    var d = new Date(fechaObjetivo + 'T00:00:00');
+    if (isNaN(d)) return '';
+    var hoy = new Date(hoyISO() + 'T00:00:00');
+    var meses = (d.getFullYear() - hoy.getFullYear()) * 12 + (d.getMonth() - hoy.getMonth());
+    var etiqueta = 'meta: ' + fechaLarga(fechaObjetivo);
+    if (completo) return etiqueta;
+    if (d < hoy) return etiqueta + ' · atrasada';
+    if (meses <= 0) return etiqueta + ' · este mes';
+    return etiqueta + ' · faltan ' + meses + (meses === 1 ? ' mes' : ' meses');
+  }
+
+  var PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
+
+  /* modal de solo lectura (historial de pagos/aportes) */
+  function openInfoModal(title, bodyHtml){
+    var overlay = document.getElementById('modal-overlay');
+    var box = document.getElementById('modal-box');
+    box.innerHTML = '<h3>' + escapeHtml(title) + '</h3>' + bodyHtml +
+      '<div class="modal-actions"><button class="save" id="modal-close">Cerrar</button></div>';
+    overlay.classList.remove('hidden');
+    document.getElementById('modal-close').onclick = closeModal;
+    overlay.onclick = function(e){ if (e.target === overlay) closeModal(); };
+  }
+
+  /* celebración: mapache bailando ~3 s */
+  function celebrate(msg){
+    var el = document.getElementById('celebrate');
+    if (!el) return;
+    document.getElementById('celebrate-text').textContent = msg || '¡Lo lograste!';
+    el.classList.remove('hidden');
+    clearTimeout(celebrate._h);
+    celebrate._h = setTimeout(function(){ el.classList.add('hidden'); }, 3000);
+    el.onclick = function(){ clearTimeout(celebrate._h); el.classList.add('hidden'); };
+  }
   function toast(msg){
     var t = document.getElementById('toast');
     t.textContent = msg;
@@ -141,9 +212,11 @@
       if (f.type === 'select') {
         html += '<select id="f-' + f.key + '">';
         f.options.forEach(function(o){
-          html += '<option value="' + o.value + '"' + (o.value === val ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>';
+          html += '<option value="' + escapeHtml(o.value) + '"' + (o.value === val ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>';
         });
         html += '</select>';
+      } else if (f.type === 'textarea') {
+        html += '<textarea id="f-' + f.key + '" rows="8" placeholder="' + escapeHtml(f.placeholder || '') + '">' + escapeHtml(val) + '</textarea>';
       } else {
         html += '<input id="f-' + f.key + '" type="' + f.type + '"' +
           (f.step ? ' step="' + f.step + '"' : '') + (f.min != null ? ' min="' + f.min + '"' : '') +
@@ -304,6 +377,7 @@
     var it = state.pendientes.find(function(x){ return x.id === id; });
     if (!it) return;
     var esCobrar = it.tipo === 'cobrar';
+    var yaResuelto = !!it.resuelto;
     openModal('Aportar a "' + it.nombre + '"', [
       { key: 'monto', label: esCobrar ? 'Monto que te pagaron' : 'Monto del aporte', type: 'number', step: '1', min: 0.01 }
     ], {}, function(v){
@@ -311,8 +385,51 @@
       if (!Array.isArray(it.pagos)) it.pagos = [];
       it.pagos.push({ fecha: hoyISO(), monto: v.monto });
       if (it.saldoActual === 0) { it.resuelto = true; it.fechaResuelto = hoyISO(); }
-      persist(); toast(it.resuelto ? (esCobrar ? '¡Cobrado por completo!' : '¡Deuda saldada!') : 'Aporte registrado.');
+      persist();
+      if (it.resuelto && !yaResuelto) celebrate(esCobrar ? '¡Cobrado por completo!' : '¡Deuda saldada!');
+      else toast('Aporte registrado.');
     }, { saveLabel: 'Aportar' });
+  }
+  function editarPendiente(id){
+    var it = state.pendientes.find(function(x){ return x.id === id; });
+    if (!it) return;
+    openModal('Editar deuda', [
+      { key: 'tipo', label: 'Tipo', type: 'select', options: [
+        { value: 'pagar', label: 'Por pagar (yo debo)' }, { value: 'cobrar', label: 'Por cobrar (me deben)' }] },
+      { key: 'nombre', label: 'Nombre', type: 'text' },
+      { key: 'quien', label: 'A quién / de quién', type: 'text', required: false },
+      { key: 'motivo', label: 'Motivo (opcional)', type: 'text', required: false },
+      { key: 'montoOriginal', label: 'Monto original', type: 'number', step: '1', min: 0 },
+      { key: 'saldoActual', label: 'Saldo actual (lo que falta)', type: 'number', step: '1', min: 0 },
+      { key: 'fechaLimite', label: 'Fecha límite (opcional)', type: 'date', required: false }
+    ], { tipo: it.tipo, nombre: it.nombre, quien: it.quien, motivo: it.motivo,
+         montoOriginal: it.montoOriginal, saldoActual: it.saldoActual, fechaLimite: it.fechaLimite || '' }, function(v){
+      it.tipo = v.tipo;
+      it.nombre = v.nombre.trim().toUpperCase();
+      it.quien = (v.quien || '').trim();
+      it.motivo = (v.motivo || '').trim();
+      it.montoOriginal = v.montoOriginal;
+      it.saldoActual = v.saldoActual;
+      it.fechaLimite = v.fechaLimite || '';
+      it.resuelto = Number(it.saldoActual) <= 0;
+      it.fechaResuelto = it.resuelto ? (it.fechaResuelto || hoyISO()) : '';
+      persist(); toast('Deuda actualizada.');
+    });
+  }
+  function historialPendiente(id){
+    var it = state.pendientes.find(function(x){ return x.id === id; });
+    if (!it) return;
+    var pagos = (it.pagos || []).slice().sort(function(a, b){ return a.fecha < b.fecha ? 1 : -1; });
+    var body;
+    if (!pagos.length) {
+      body = '<div class="empty-state">Aún no hay ' + (it.tipo === 'cobrar' ? 'pagos recibidos' : 'pagos hechos') + '.</div>';
+    } else {
+      var total = pagos.reduce(function(s, p){ return s + Number(p.monto); }, 0);
+      body = '<div class="hist-list">' + pagos.map(function(p){
+        return '<div class="hist-row"><span>' + escapeHtml(fechaLarga(p.fecha)) + '</span><span class="num">' + fmt(p.monto) + '</span></div>';
+      }).join('') + '</div><div class="hist-total"><span>Total</span><span class="num">' + fmt(total) + '</span></div>';
+    }
+    openInfoModal((it.tipo === 'cobrar' ? 'Pagos recibidos · ' : 'Pagos hechos · ') + it.nombre, body);
   }
   function eliminarPendiente(id){
     state.pendientes = state.pendientes.filter(function(x){ return x.id !== id; });
@@ -323,16 +440,18 @@
   function nuevaMeta(){
     openModal('Nueva meta de ahorro', [
       { key: 'nombre', label: 'Nombre', type: 'text', placeholder: 'Pasaporte, telescopio…' },
-      { key: 'montoObjetivo', label: 'Monto objetivo', type: 'number', step: '1', min: 1 }
+      { key: 'montoObjetivo', label: 'Monto objetivo', type: 'number', step: '1', min: 1 },
+      { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
     ], {}, function(v){
       state.metas.push({ id: uid(), nombre: v.nombre.trim().toUpperCase(), montoObjetivo: v.montoObjetivo,
-        montoActual: 0, completada: false, aportes: [] });
+        montoActual: 0, completada: false, aportes: [], fechaObjetivo: v.fechaObjetivo || '' });
       persist(); toast('Meta creada.');
     });
   }
   function aportarMeta(id){
     var it = state.metas.find(function(x){ return x.id === id; });
     if (!it) return;
+    var yaEstaba = !!it.completada;
     openModal('Aportar a "' + it.nombre + '"', [
       { key: 'monto', label: 'Monto del aporte', type: 'number', step: '1', min: 0.01 }
     ], {}, function(v){
@@ -340,20 +459,58 @@
       if (!Array.isArray(it.aportes)) it.aportes = [];
       it.aportes.push({ fecha: hoyISO(), monto: v.monto });
       if (it.montoActual >= it.montoObjetivo) it.completada = true;
-      persist(); toast(it.completada ? '¡Meta completada!' : 'Aporte registrado.');
+      persist();
+      if (it.completada && !yaEstaba) celebrate('¡Meta completada! ' + it.nombre);
+      else toast('Aporte registrado.');
     }, { saveLabel: 'Aportar' });
+  }
+  function editarMeta(id){
+    var it = state.metas.find(function(x){ return x.id === id; });
+    if (!it) return;
+    openModal('Editar meta', [
+      { key: 'nombre', label: 'Nombre', type: 'text' },
+      { key: 'montoObjetivo', label: 'Monto objetivo', type: 'number', step: '1', min: 1 },
+      { key: 'montoActual', label: 'Monto actual (ahorrado)', type: 'number', step: '1', min: 0 },
+      { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
+    ], { nombre: it.nombre, montoObjetivo: it.montoObjetivo, montoActual: it.montoActual, fechaObjetivo: it.fechaObjetivo || '' }, function(v){
+      it.nombre = v.nombre.trim().toUpperCase();
+      it.montoObjetivo = v.montoObjetivo;
+      it.montoActual = v.montoActual;
+      it.fechaObjetivo = v.fechaObjetivo || '';
+      it.completada = it.montoObjetivo > 0 && it.montoActual >= it.montoObjetivo;
+      persist(); toast('Meta actualizada.');
+    });
+  }
+  function historialMeta(id){
+    var it = state.metas.find(function(x){ return x.id === id; });
+    if (!it) return;
+    openInfoModal('Aportes · ' + it.nombre, listaMovsHtml(it.aportes));
   }
   function eliminarMeta(id){
     state.metas = state.metas.filter(function(x){ return x.id !== id; });
     persist(); toast('Meta eliminada.');
   }
 
-  function editarFondoObjetivo(){
-    openModal('Objetivo del fondo de seguridad', [
-      { key: 'montoObjetivo', label: 'Monto objetivo', type: 'number', step: '1', min: 0 }
-    ], { montoObjetivo: state.fondoEmergencia.montoObjetivo }, function(v){
+  /* lista simple de {fecha, monto} para los modales de historial */
+  function listaMovsHtml(items){
+    var arr = (items || []).slice().sort(function(a, b){ return a.fecha < b.fecha ? 1 : -1; });
+    if (!arr.length) return '<div class="empty-state">Aún no hay aportes.</div>';
+    var total = arr.reduce(function(s, p){ return s + Number(p.monto); }, 0);
+    return '<div class="hist-list">' + arr.map(function(p){
+      return '<div class="hist-row"><span>' + escapeHtml(fechaLarga(p.fecha)) + '</span><span class="num">' + fmt(p.monto) + '</span></div>';
+    }).join('') + '</div><div class="hist-total"><span>Total</span><span class="num">' + fmt(total) + '</span></div>';
+  }
+
+  function editarFondoSeguridad(){
+    openModal('Editar fondo de seguridad', [
+      { key: 'montoObjetivo', label: 'Monto objetivo', type: 'number', step: '1', min: 0 },
+      { key: 'montoActual', label: 'Monto actual', type: 'number', step: '1', min: 0 },
+      { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
+    ], { montoObjetivo: state.fondoEmergencia.montoObjetivo, montoActual: state.fondoEmergencia.montoActual, fechaObjetivo: state.fondoEmergencia.fechaObjetivo || '' }, function(v){
       state.fondoEmergencia.montoObjetivo = v.montoObjetivo;
-      persist(); toast('Objetivo actualizado.');
+      state.fondoEmergencia.montoActual = v.montoActual;
+      state.fondoEmergencia.fechaObjetivo = v.fechaObjetivo || '';
+      persist(); toast('Fondo de seguridad actualizado.');
     });
   }
 
@@ -378,12 +535,16 @@
     }, { saveLabel: 'Retirar' });
   }
   function aportarFondo(){
+    var yaCompleto = state.fondoEmergencia.montoObjetivo > 0 && Number(state.fondoEmergencia.montoActual) >= state.fondoEmergencia.montoObjetivo;
     openModal('Aportar al fondo de seguridad', [
       { key: 'monto', label: 'Monto del aporte', type: 'number', step: '1', min: 0.01 }
     ], {}, function(v){
       state.fondoEmergencia.montoActual = Number(state.fondoEmergencia.montoActual) + v.monto;
       state.fondoEmergencia.aportes.push({ fecha: hoyISO(), monto: v.monto });
-      persist(); toast('Aporte registrado.');
+      var completoAhora = state.fondoEmergencia.montoObjetivo > 0 && state.fondoEmergencia.montoActual >= state.fondoEmergencia.montoObjetivo;
+      persist();
+      if (completoAhora && !yaCompleto) celebrate('¡Fondo de seguridad completo!');
+      else toast('Aporte registrado.');
     }, { saveLabel: 'Aportar' });
   }
   function retirarFondo(){
@@ -399,25 +560,35 @@
   }
 
   function nuevoFondoAdicional(){
-    openModal('Nuevo fondo adicional', [
+    openModal('Nuevo fondo', [
       { key: 'nombre', label: 'Nombre', type: 'text', placeholder: 'Colchón médico, fondo del carro…' },
       { key: 'montoActual', label: 'Monto inicial', type: 'number', step: '1', min: 0 },
-      { key: 'montoObjetivo', label: 'Monto objetivo (opcional, 0 = sin objetivo)', type: 'number', step: '1', min: 0 }
+      { key: 'montoObjetivo', label: 'Monto objetivo (opcional, 0 = sin objetivo)', type: 'number', step: '1', min: 0 },
+      { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
     ], { montoActual: 0, montoObjetivo: 0 }, function(v){
-      state.fondosAdicionales.push({ id: uid(), nombre: v.nombre.trim(), montoActual: v.montoActual, montoObjetivo: v.montoObjetivo, aportes: [] });
+      state.fondosAdicionales.push({ id: uid(), nombre: v.nombre.trim(), montoActual: v.montoActual, montoObjetivo: v.montoObjetivo, aportes: [], fechaObjetivo: v.fechaObjetivo || '' });
       persist(); toast('Fondo agregado.');
     });
   }
   function aportarFondoAdicional(id){
     var f = state.fondosAdicionales.find(function(x){ return x.id === id; });
     if (!f) return;
+    var yaCompleto = f.montoObjetivo > 0 && Number(f.montoActual) >= f.montoObjetivo;
     openModal('Aportar a "' + f.nombre + '"', [
       { key: 'monto', label: 'Monto del aporte', type: 'number', step: '1', min: 0.01 }
     ], {}, function(v){
       f.montoActual = Math.round((Number(f.montoActual) + v.monto) * 100) / 100;
       f.aportes.push({ fecha: hoyISO(), monto: v.monto });
-      persist(); toast('Aporte registrado.');
+      var completoAhora = f.montoObjetivo > 0 && f.montoActual >= f.montoObjetivo;
+      persist();
+      if (completoAhora && !yaCompleto) celebrate('¡Fondo completo! ' + f.nombre);
+      else toast('Aporte registrado.');
     }, { saveLabel: 'Aportar' });
+  }
+  function historialFondoAdicional(id){
+    var f = state.fondosAdicionales.find(function(x){ return x.id === id; });
+    if (!f) return;
+    openInfoModal('Aportes · ' + f.nombre, listaMovsHtml(f.aportes));
   }
   function retirarFondoAdicional(id){
     var f = state.fondosAdicionales.find(function(x){ return x.id === id; });
@@ -437,10 +608,14 @@
     if (!f) return;
     openModal('Editar fondo', [
       { key: 'nombre', label: 'Nombre', type: 'text' },
-      { key: 'montoObjetivo', label: 'Monto objetivo (0 = sin objetivo)', type: 'number', step: '1', min: 0 }
-    ], { nombre: f.nombre, montoObjetivo: f.montoObjetivo }, function(v){
+      { key: 'montoActual', label: 'Monto actual', type: 'number', step: '1', min: 0 },
+      { key: 'montoObjetivo', label: 'Monto objetivo (0 = sin objetivo)', type: 'number', step: '1', min: 0 },
+      { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
+    ], { nombre: f.nombre, montoActual: f.montoActual, montoObjetivo: f.montoObjetivo, fechaObjetivo: f.fechaObjetivo || '' }, function(v){
       f.nombre = v.nombre.trim();
+      f.montoActual = v.montoActual;
       f.montoObjetivo = v.montoObjetivo;
+      f.fechaObjetivo = v.fechaObjetivo || '';
       persist(); toast('Fondo actualizado.');
     });
   }
@@ -453,24 +628,29 @@
     openModal('Nueva inversión', [
       { key: 'nombre', label: 'Nombre', type: 'text', placeholder: 'CETES, fondo indexado…' },
       { key: 'montoActual', label: 'Monto actual', type: 'number', step: '1', min: 0 },
-      { key: 'tasaInteres', label: 'Tasa de interés anual (%)', type: 'number', step: '0.01', min: 0 }
+      { key: 'tasaInteres', label: 'Tasa de interés anual (%)', type: 'number', step: '0.01', min: 0 },
+      { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
     ], { montoActual: 0, tasaInteres: 0 }, function(v){
       state.inversiones.push({ id: uid(), nombre: v.nombre.trim().toUpperCase(), montoActual: v.montoActual,
-        tasaInteres: v.tasaInteres, reinversiones: [] });
+        tasaInteres: v.tasaInteres, reinversiones: [], fechaObjetivo: v.fechaObjetivo || '' });
       persist(); toast('Inversión agregada.');
     });
   }
-  function aportarInversion(id){
+  function editarInversion(id){
     var it = state.inversiones.find(function(x){ return x.id === id; });
     if (!it) return;
-    openModal('Actualizar "' + it.nombre + '"', [
-      { key: 'monto', label: 'Nuevo monto total', type: 'number', step: '1', min: 0 },
-      { key: 'tasaInteres', label: 'Tasa de interés anual (%)', type: 'number', step: '0.01', min: 0 }
-    ], { monto: it.montoActual, tasaInteres: it.tasaInteres || 0 }, function(v){
-      it.montoActual = v.monto;
+    openModal('Editar inversión', [
+      { key: 'nombre', label: 'Nombre', type: 'text' },
+      { key: 'montoActual', label: 'Monto actual', type: 'number', step: '1', min: 0 },
+      { key: 'tasaInteres', label: 'Tasa de interés anual (%)', type: 'number', step: '0.01', min: 0 },
+      { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
+    ], { nombre: it.nombre, montoActual: it.montoActual, tasaInteres: it.tasaInteres || 0, fechaObjetivo: it.fechaObjetivo || '' }, function(v){
+      it.nombre = v.nombre.trim().toUpperCase();
+      it.montoActual = v.montoActual;
       it.tasaInteres = v.tasaInteres;
+      it.fechaObjetivo = v.fechaObjetivo || '';
       persist(); toast('Inversión actualizada.');
-    }, { saveLabel: 'Actualizar' });
+    });
   }
   function reinvertirInversion(id){
     var it = state.inversiones.find(function(x){ return x.id === id; });
@@ -490,6 +670,102 @@
   function eliminarInversion(id){
     state.inversiones = state.inversiones.filter(function(x){ return x.id !== id; });
     persist(); toast('Inversión eliminada.');
+  }
+  function historialInversion(id){
+    var it = state.inversiones.find(function(x){ return x.id === id; });
+    if (!it) return;
+    openInfoModal('Reinversiones · ' + it.nombre, listaMovsHtml(it.reinversiones));
+  }
+
+  /* ---------- acciones: registro de gastos (movimientos) ---------- */
+  function camposMovimiento(){
+    return [
+      { key: 'monto', label: 'Monto', type: 'number', step: '1', min: 0.01 },
+      { key: 'categoria', label: 'Categoría', type: 'select', options: state.categorias.map(function(c){ return { value: c, label: c }; }) },
+      { key: 'motivo', label: 'Motivo', type: 'text', placeholder: 'En qué lo gastaste', required: false },
+      { key: 'fecha', label: 'Fecha', type: 'date' }
+    ];
+  }
+  function nuevoMovimiento(){
+    openModal('Registrar gasto', camposMovimiento(),
+      { fecha: hoyISO(), categoria: state.categorias[0] }, function(v){
+        state.movimientos.push({ id: uid(), fecha: v.fecha || hoyISO(), monto: v.monto,
+          categoria: v.categoria, motivo: (v.motivo || '').trim() });
+        persist(); toast('Gasto registrado.');
+      }, { saveLabel: 'Guardar' });
+  }
+  function editarMovimiento(id){
+    var g = state.movimientos.find(function(x){ return x.id === id; });
+    if (!g) return;
+    openModal('Editar gasto', camposMovimiento(),
+      { monto: g.monto, categoria: g.categoria, motivo: g.motivo, fecha: g.fecha }, function(v){
+        g.monto = v.monto; g.categoria = v.categoria;
+        g.motivo = (v.motivo || '').trim(); g.fecha = v.fecha || g.fecha;
+        persist(); toast('Gasto actualizado.');
+      });
+  }
+  function eliminarMovimiento(id){
+    state.movimientos = state.movimientos.filter(function(x){ return x.id !== id; });
+    persist(); toast('Gasto eliminado.');
+  }
+  function gestionarCategorias(){
+    openModal('Categorías', [
+      { key: 'lista', label: 'Una categoría por renglón', type: 'textarea', required: false }
+    ], { lista: state.categorias.join('\n') }, function(v){
+      var arr = String(v.lista || '').split('\n').map(function(s){ return s.trim(); }).filter(Boolean);
+      // sin duplicados, respetando el orden
+      var vistos = {}, limpio = [];
+      arr.forEach(function(c){ var k = c.toLowerCase(); if (!vistos[k]) { vistos[k] = 1; limpio.push(c); } });
+      if (!limpio.length) limpio = CATEGORIAS_DEFAULT.slice();
+      state.categorias = limpio;
+      persist(); toast('Categorías actualizadas.');
+    });
+  }
+
+  /* ---------- acción: renombrar títulos de sección ---------- */
+  function editarTitulo(key){
+    openModal('Nombre de la sección', [
+      { key: 'titulo', label: 'Título', type: 'text' }
+    ], { titulo: tituloDe(key) }, function(v){
+      var t = (v.titulo || '').trim();
+      if (t && t !== TITULOS_DEFAULT[key]) state.titulos[key] = t;
+      else delete state.titulos[key];
+      persist(); toast('Título actualizado.');
+    });
+  }
+
+  /* ---------- exportar CSV (todo, por bloques) ---------- */
+  function exportCSV(){
+    function esc(s){ s = String(s == null ? '' : s); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+    function bloque(titulo, headers, rows){
+      var out = titulo + '\n' + headers.join(',') + '\n';
+      rows.forEach(function(r){ out += r.map(esc).join(',') + '\n'; });
+      return out + '\n';
+    }
+    var csv = '﻿';
+    csv += bloque('GASTOS REGISTRADOS', ['fecha', 'categoria', 'motivo', 'monto'],
+      state.movimientos.slice().sort(function(a, b){ return a.fecha < b.fecha ? 1 : -1; }).map(function(g){ return [g.fecha, g.categoria, g.motivo, g.monto]; }));
+    csv += bloque('INGRESOS', ['nombre', 'monto', 'frecuencia'],
+      state.ingresos.map(function(i){ return [i.nombre, i.monto, i.frecuencia]; }));
+    csv += bloque('GASTOS FIJOS', ['nombre', 'categoria', 'monto', 'frecuencia'],
+      state.gastos.map(function(g){ return [g.nombre, g.categoria, g.monto, g.frecuencia]; }));
+    csv += bloque('DEUDAS', ['tipo', 'nombre', 'quien', 'motivo', 'monto original', 'saldo', 'fecha limite', 'resuelto'],
+      state.pendientes.map(function(p){ return [p.tipo, p.nombre, p.quien, p.motivo, p.montoOriginal, p.saldoActual, p.fechaLimite, p.resuelto ? 'sí' : 'no']; }));
+    csv += bloque('METAS', ['nombre', 'objetivo', 'actual', 'completada', 'fecha objetivo'],
+      state.metas.map(function(m){ return [m.nombre, m.montoObjetivo, m.montoActual, m.completada ? 'sí' : 'no', m.fechaObjetivo || '']; }));
+    var fondos = [['Fondo de seguridad', state.fondoEmergencia.montoObjetivo, state.fondoEmergencia.montoActual, state.fondoEmergencia.fechaObjetivo || '']]
+      .concat(state.fondosAdicionales.map(function(f){ return [f.nombre, f.montoObjetivo, f.montoActual, f.fechaObjetivo || '']; }));
+    csv += bloque('FONDOS', ['nombre', 'objetivo', 'actual', 'fecha objetivo'], fondos);
+    csv += bloque('INVERSIONES', ['nombre', 'monto', 'tasa anual %', 'fecha objetivo'],
+      state.inversiones.map(function(i){ return [i.nombre, i.montoActual, i.tasaInteres, i.fechaObjetivo || '']; }));
+
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = 'raccoon-finances-' + hoyISO() + '_' + ahoraHM() + '.csv';
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    toast('CSV exportado.');
   }
 
   /* ---------- acciones: decisión de compra ---------- */
@@ -540,6 +816,13 @@
     for (var i = 0; i < btns.length; i++) btns[i].classList.toggle('active', btns[i].dataset.tab === activeTab);
     var views = document.querySelectorAll('section.view');
     for (var j = 0; j < views.length; j++) views[j].classList.toggle('active', views[j].id === 'view-' + activeTab);
+    var fab = document.getElementById('fab-gasto');
+    if (fab) fab.classList.toggle('hidden', activeTab !== 'resumen');
+  }
+  /* botón lápiz para renombrar el título de una sección */
+  function tituloEditable(key){
+    return '<h3>' + escapeHtml(tituloDe(key)) +
+      '<button class="ti-edit" data-act="edit-titulo" data-key="' + key + '" title="Renombrar" aria-label="Renombrar">' + PENCIL_SVG + '</button></h3>';
   }
 
   /* ---------- render: resumen ---------- */
@@ -705,6 +988,8 @@
       '<span class="bar-value num">' + fmt(p.saldoActual) + ' / ' + fmt(p.montoOriginal) + '</span></div>' +
       '<div class="pending-actions">' +
       '<button class="icon-btn" data-act="aportar-pendiente" data-id="' + p.id + '">Aportar</button>' +
+      '<button class="icon-btn" data-act="hist-pendiente" data-id="' + p.id + '">Historial</button>' +
+      '<button class="icon-btn" data-act="edit-pendiente" data-id="' + p.id + '">Editar</button>' +
       '<button class="icon-btn danger" data-act="del-pendiente" data-id="' + p.id + '">Eliminar</button></div></div>';
   }
   function renderPendientes(){
@@ -715,7 +1000,7 @@
     var totalPagar = porPagar.reduce(function(s, p){ return s + Number(p.saldoActual); }, 0);
     var totalCobrar = porCobrar.reduce(function(s, p){ return s + Number(p.saldoActual); }, 0);
 
-    var out = '<div class="card"><div class="card-head"><h3>Deudas por pagar</h3><button class="add-btn accent" id="btn-add-pendiente-pagar">+ Deuda</button></div>';
+    var out = '<div class="card"><div class="card-head">' + tituloEditable('deudasPagar') + '<button class="add-btn accent" id="btn-add-pendiente-pagar">+ Deuda</button></div>';
     if (porPagar.length) {
       out += '<div class="mini-stats"><div class="stat-tile warn"><div class="label">Total por pagar</div><div class="value num">' + fmt(totalPagar) + '</div></div></div>';
     }
@@ -723,7 +1008,7 @@
     porPagar.forEach(function(p){ out += deudaCardHtml(p); });
     out += '</div>';
 
-    out += '<div class="card"><div class="card-head"><h3>Deudas por cobrar</h3><button class="add-btn accent" id="btn-add-pendiente-cobrar">+ Cobro</button></div>';
+    out += '<div class="card"><div class="card-head">' + tituloEditable('deudasCobrar') + '<button class="add-btn accent" id="btn-add-pendiente-cobrar">+ Cobro</button></div>';
     if (porCobrar.length) {
       out += '<div class="mini-stats"><div class="stat-tile good"><div class="label">Total por cobrar</div><div class="value num">' + fmt(totalCobrar) + '</div></div></div>';
     }
@@ -757,7 +1042,7 @@
     var dedicadoAMetas = cta.dedicadoAMetas;
     var dedicadoAFondos = cta.dedicadoAFondos;
     var disponibleReal = cta.disponibleReal;
-    var out = '<div class="card"><div class="card-head"><h3>Cuenta bancaria</h3><span class="meta">apartado</span></div>';
+    var out = '<div class="card"><div class="card-head">' + tituloEditable('cuentaBancaria') + '</div>';
     out += '<div class="mini-stats">' +
       '<div class="stat-tile"><div class="label">Apartado</div><div class="value num">' + fmt(apartado) + '</div></div>' +
       '<div class="stat-tile"><div class="label">Dedicado a metas</div><div class="value num">' + fmt(dedicadoAMetas) + '</div><div class="sub">ahorro consolidado en todas tus metas</div></div>' +
@@ -769,22 +1054,34 @@
       '<button class="icon-btn" id="btn-ajustar-apartado">Ajustar apartado</button>' +
       '</div></div>';
 
-    out += '<div class="card"><div class="card-head"><h3>Fondos</h3><button class="add-btn accent" id="btn-add-fondo-adicional">+ Fondo</button></div>';
-    out += '<div class="goal-grid"><div class="goal-card' + (r.fondoObjetivo > 0 && r.fondoActual >= r.fondoObjetivo ? ' completada' : '') + '">' +
+    function fechaLinea(iso, completo){
+      var t = faltanTexto(iso, completo);
+      if (!t) return '';
+      var atr = (t.indexOf('atrasada') !== -1);
+      return '<div class="goal-fecha' + (atr ? ' atrasada' : '') + '">' + escapeHtml(t) + '</div>';
+    }
+
+    out += '<div class="card"><div class="card-head">' + tituloEditable('fondos') + '<button class="add-btn accent" id="btn-add-fondo-adicional">+ Fondo</button></div>';
+    var fsCompleto = r.fondoObjetivo > 0 && r.fondoActual >= r.fondoObjetivo;
+    out += '<div class="goal-grid"><div class="goal-card' + (fsCompleto ? ' completada' : '') + '">' +
       '<h4>Fondo de seguridad</h4><div class="ring-wrap">' + ringSvg(r.fondoPct) + '<div class="ring-center">' + Math.round(r.fondoPct) + '%</div></div>' +
       '<div class="goal-amounts">' + fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo) + '</div>' +
-      '<div class="goal-actions"><button class="icon-btn" id="btn-aportar-fondo">Aportar</button><button class="icon-btn" id="btn-retirar-fondo">Retirar</button><button class="icon-btn" id="btn-editar-fondo">Objetivo</button></div>' +
+      fechaLinea(state.fondoEmergencia.fechaObjetivo, fsCompleto) +
+      '<div class="goal-actions"><button class="icon-btn" id="btn-aportar-fondo">Aportar</button><button class="icon-btn" id="btn-retirar-fondo">Retirar</button><button class="icon-btn" data-act="hist-fondo-seguridad">Historial</button><button class="icon-btn" id="btn-editar-fondo">Editar</button></div>' +
       '</div>';
     state.fondosAdicionales.forEach(function(f){
       var fObjetivo = Number(f.montoObjetivo) || 0;
       var fPct = fObjetivo > 0 ? Math.min(100, Number(f.montoActual) / fObjetivo * 100) : 0;
+      var fComp = fObjetivo > 0 && f.montoActual >= fObjetivo;
       var fAmounts = fObjetivo > 0 ? (fmt(f.montoActual) + ' de ' + fmt(fObjetivo)) : (fmt(f.montoActual) + ' — sin objetivo');
-      out += '<div class="goal-card' + (fObjetivo > 0 && f.montoActual >= fObjetivo ? ' completada' : '') + '"><h4>' + escapeHtml(f.nombre) + '</h4>' +
+      out += '<div class="goal-card' + (fComp ? ' completada' : '') + '"><h4>' + escapeHtml(f.nombre) + '</h4>' +
         '<div class="ring-wrap">' + ringSvg(fPct) + '<div class="ring-center">' + Math.round(fPct) + '%</div></div>' +
         '<div class="goal-amounts">' + fAmounts + '</div>' +
+        fechaLinea(f.fechaObjetivo, fComp) +
         '<div class="goal-actions">' +
         '<button class="icon-btn" data-act="aportar-fondo-adicional" data-id="' + f.id + '">Aportar</button>' +
         '<button class="icon-btn" data-act="retirar-fondo-adicional" data-id="' + f.id + '">Retirar</button>' +
+        '<button class="icon-btn" data-act="hist-fondo-adicional" data-id="' + f.id + '">Historial</button>' +
         '<button class="icon-btn" data-act="editar-fondo-adicional" data-id="' + f.id + '">Editar</button>' +
         '<button class="icon-btn danger" data-act="del-fondo-adicional" data-id="' + f.id + '">Eliminar</button></div></div>';
     });
@@ -792,7 +1089,7 @@
 
     var faltantePorCompletar = state.metas.filter(function(m){ return !m.completada; })
       .reduce(function(s, m){ return s + Math.max(0, Number(m.montoObjetivo) - Number(m.montoActual)); }, 0);
-    out += '<div class="card"><div class="card-head"><h3>Metas de ahorro</h3><button class="add-btn accent" id="btn-add-meta">+ Meta</button></div>';
+    out += '<div class="card"><div class="card-head">' + tituloEditable('metasAhorro') + '<button class="add-btn accent" id="btn-add-meta">+ Meta</button></div>';
     if (state.metas.length) {
       out += '<div class="mini-stats"><div class="stat-tile' + (faltantePorCompletar > 0 ? ' warn' : ' good') + '"><div class="label">Falta por completar</div><div class="value num">' + fmt(faltantePorCompletar) + '</div><div class="sub">suma de todas tus metas activas</div></div></div>';
     }
@@ -804,26 +1101,32 @@
         out += '<div class="goal-card' + (m.completada ? ' completada' : '') + '"><h4>' + escapeHtml(m.nombre) + '</h4>' +
           '<div class="ring-wrap">' + ringSvg(pct) + '<div class="ring-center">' + Math.round(pct) + '%</div></div>' +
           '<div class="goal-amounts">' + fmt(m.montoActual) + ' de ' + fmt(m.montoObjetivo) + '</div>' +
+          fechaLinea(m.fechaObjetivo, m.completada) +
           '<div class="goal-actions">' +
           (m.completada ? '' : '<button class="icon-btn" data-act="aportar-meta" data-id="' + m.id + '">Aportar</button>') +
+          '<button class="icon-btn" data-act="hist-meta" data-id="' + m.id + '">Historial</button>' +
+          '<button class="icon-btn" data-act="edit-meta" data-id="' + m.id + '">Editar</button>' +
           '<button class="icon-btn danger" data-act="del-meta" data-id="' + m.id + '">Eliminar</button></div></div>';
       });
       out += '</div>';
     }
     out += '</div>';
 
-    out += '<div class="card"><div class="card-head"><h3>Inversiones</h3><button class="add-btn accent" id="btn-add-inversion">+ Inversión</button></div>';
+    out += '<div class="card"><div class="card-head">' + tituloEditable('inversiones') + '<button class="add-btn accent" id="btn-add-inversion">+ Inversión</button></div>';
     if (!state.inversiones.length) { out += '<div class="empty-state">Sin inversiones registradas.</div>'; }
     else {
       out += '<div class="table-scroll"><table><thead><tr><th>Nombre</th><th class="num">Tasa anual</th><th class="num">Monto actual</th><th class="num">Rendimiento anual est.</th><th></th></tr></thead><tbody>';
       state.inversiones.forEach(function(i){
         var tasa = Number(i.tasaInteres) || 0;
         var rendimiento = Number(i.montoActual) * (tasa / 100);
-        out += '<tr><td>' + escapeHtml(i.nombre) + '</td><td class="num">' + (tasa ? tasa.toFixed(2) + '%' : '—') + '</td>' +
+        var ft = faltanTexto(i.fechaObjetivo);
+        out += '<tr><td>' + escapeHtml(i.nombre) + (ft ? '<div class="goal-fecha' + (ft.indexOf('atrasada') !== -1 ? ' atrasada' : '') + '">' + escapeHtml(ft) + '</div>' : '') + '</td>' +
+          '<td class="num">' + (tasa ? tasa.toFixed(2) + '%' : '—') + '</td>' +
           '<td class="num">' + fmt(i.montoActual) + '</td><td class="num">' + (rendimiento ? fmt(rendimiento) : '—') + '</td>' +
           '<td><div class="row-actions">' +
           (rendimiento > 0 ? '<button class="icon-btn" data-act="reinvertir-inversion" data-id="' + i.id + '">Reinvertir</button>' : '') +
-          '<button class="icon-btn" data-act="aportar-inversion" data-id="' + i.id + '">Actualizar</button>' +
+          '<button class="icon-btn" data-act="hist-inversion" data-id="' + i.id + '">Historial</button>' +
+          '<button class="icon-btn" data-act="edit-inversion" data-id="' + i.id + '">Editar</button>' +
           '<button class="icon-btn danger" data-act="del-inversion" data-id="' + i.id + '">Eliminar</button></div></td></tr>';
       });
       out += '</tbody></table></div>';
@@ -836,16 +1139,68 @@
     document.getElementById('btn-ajustar-apartado').onclick = ajustarApartado;
     document.getElementById('btn-aportar-fondo').onclick = aportarFondo;
     document.getElementById('btn-retirar-fondo').onclick = retirarFondo;
-    document.getElementById('btn-editar-fondo').onclick = editarFondoObjetivo;
+    document.getElementById('btn-editar-fondo').onclick = editarFondoSeguridad;
     document.getElementById('btn-add-fondo-adicional').onclick = nuevoFondoAdicional;
     document.getElementById('btn-add-meta').onclick = nuevaMeta;
     document.getElementById('btn-add-inversion').onclick = nuevaInversion;
   }
+  function historialFondoSeguridad(){
+    openInfoModal('Aportes · Fondo de seguridad', listaMovsHtml(state.fondoEmergencia.aportes));
+  }
 
-  /* ---------- render: ¿lo compro? ---------- */
+  /* ---------- render: Registro (gastos) + ¿lo compro? ---------- */
+  var mesesAbiertos = {};
   function renderDecide(){
+    var out = '';
+
+    out += '<div class="card"><div class="card-head"><h3>Registrar gasto</h3>' +
+      '<div class="top-actions"><button class="ghost-btn" id="btn-categorias">Categorías</button>' +
+      '<button class="add-btn accent" id="btn-add-mov">+ Gasto</button></div></div>';
+
+    var porMes = {};
+    state.movimientos.forEach(function(g){
+      var ym = (g.fecha || hoyISO()).slice(0, 7);
+      (porMes[ym] = porMes[ym] || []).push(g);
+    });
+    var mesActual = hoyISO().slice(0, 7);
+    var viejos = Object.keys(porMes).filter(function(m){ return m !== mesActual; }).sort().reverse();
+
+    if (viejos.length) {
+      out += '<div class="mes-chips">' + viejos.map(function(m){
+        return '<button class="mes-chip' + (mesesAbiertos[m] ? ' on' : '') + '" data-act="toggle-mes" data-mes="' + m + '">' + escapeHtml(mesLegible(m)) + '</button>';
+      }).join('') + '</div>';
+    }
+
+    function bloqueMes(ym, list){
+      var arr = (list || []).slice().sort(function(a, b){ return a.fecha < b.fecha ? 1 : -1; });
+      var s = '<div class="mov-mes"><div class="group-label">' + escapeHtml(mesLegible(ym)) + '</div>';
+      if (!arr.length) { s += '<div class="empty-state">Sin gastos este mes.</div></div>'; return s; }
+      arr.forEach(function(g){
+        s += '<div class="mov-row"><div class="mov-main"><span class="mov-cat">' + escapeHtml(g.categoria) + '</span>' +
+          (g.motivo ? '<span class="mov-motivo">' + escapeHtml(g.motivo) + '</span>' : '') +
+          '<span class="mov-fecha">' + escapeHtml(fechaCorta(g.fecha)) + '</span></div>' +
+          '<span class="mov-monto num">' + fmt(g.monto) + '</span>' +
+          '<div class="mov-acts"><button class="icon-btn" data-act="edit-movimiento" data-id="' + g.id + '">Editar</button>' +
+          '<button class="icon-btn danger" data-act="del-movimiento" data-id="' + g.id + '">Eliminar</button></div></div>';
+      });
+      var total = arr.reduce(function(t, g){ return t + Number(g.monto); }, 0);
+      var porCat = {};
+      arr.forEach(function(g){ porCat[g.categoria] = (porCat[g.categoria] || 0) + Number(g.monto); });
+      s += '<div class="mov-totales">';
+      Object.keys(porCat).sort(function(a, b){ return porCat[b] - porCat[a]; }).forEach(function(c){
+        s += '<div class="mov-tot-row"><span>' + escapeHtml(c) + '</span><span class="num">' + fmt(porCat[c]) + '</span></div>';
+      });
+      s += '<div class="mov-tot-row grand"><span>Total del mes</span><span class="num">' + fmt(total) + '</span></div></div></div>';
+      return s;
+    }
+
+    out += '<div class="card">';
+    out += bloqueMes(mesActual, porMes[mesActual]);
+    viejos.forEach(function(m){ if (mesesAbiertos[m]) out += bloqueMes(m, porMes[m]); });
+    out += '</div>';
+
     var ultima = state.decisiones[0];
-    var out = '<div class="decide-grid">';
+    out += '<div class="decide-grid" style="margin-top:4px">';
     out += '<div class="card decide-form"><div class="card-head"><h3>¿Puedo comprarlo?</h3></div>' +
       '<div class="field"><label for="dec-nombre">¿Qué quieres comprar?</label><input id="dec-nombre" type="text" placeholder="Telescopio, lente…"></div>' +
       '<div class="field"><label for="dec-monto">Monto</label><input id="dec-monto" type="number" step="1" min="0"></div>' +
@@ -870,6 +1225,8 @@
     }
     out += '</div>';
     document.getElementById('view-decide').innerHTML = out;
+    document.getElementById('btn-add-mov').onclick = nuevoMovimiento;
+    document.getElementById('btn-categorias').onclick = gestionarCategorias;
     document.getElementById('btn-evaluar').onclick = function(){
       var nombre = document.getElementById('dec-nombre').value.trim();
       var monto = parseFloat(document.getElementById('dec-monto').value);
@@ -1030,7 +1387,7 @@
     if (!btn) return;
     var id = btn.dataset.id;
     var act = btn.dataset.act;
-    if (act === 'del-ingreso' || act === 'del-gasto' || act === 'del-pendiente' || act === 'del-meta' || act === 'del-inversion' || act === 'del-decision' || act === 'del-fondo-adicional') {
+    if (act.indexOf('del-') === 0) {
       if (btn.dataset.armed !== '1') {
         btn.dataset.armed = '1'; var orig = btn.textContent; btn.dataset.orig = orig; btn.textContent = '¿Seguro?'; btn.classList.add('confirm');
         setTimeout(function(){ if (btn.isConnected) { btn.dataset.armed = ''; btn.textContent = btn.dataset.orig; btn.classList.remove('confirm'); } }, 3000);
@@ -1043,17 +1400,28 @@
       case 'edit-gasto': editarGasto(id); break;
       case 'del-gasto': eliminarGasto(id); break;
       case 'aportar-pendiente': aportarPendiente(id); break;
+      case 'hist-pendiente': historialPendiente(id); break;
+      case 'edit-pendiente': editarPendiente(id); break;
       case 'del-pendiente': eliminarPendiente(id); break;
       case 'aportar-meta': aportarMeta(id); break;
+      case 'hist-meta': historialMeta(id); break;
+      case 'edit-meta': editarMeta(id); break;
       case 'del-meta': eliminarMeta(id); break;
-      case 'aportar-inversion': aportarInversion(id); break;
       case 'reinvertir-inversion': reinvertirInversion(id); break;
+      case 'hist-inversion': historialInversion(id); break;
+      case 'edit-inversion': editarInversion(id); break;
       case 'del-inversion': eliminarInversion(id); break;
       case 'del-decision': eliminarDecision(id); break;
       case 'aportar-fondo-adicional': aportarFondoAdicional(id); break;
       case 'retirar-fondo-adicional': retirarFondoAdicional(id); break;
       case 'editar-fondo-adicional': editarFondoAdicional(id); break;
+      case 'hist-fondo-adicional': historialFondoAdicional(id); break;
       case 'del-fondo-adicional': eliminarFondoAdicional(id); break;
+      case 'hist-fondo-seguridad': historialFondoSeguridad(); break;
+      case 'edit-movimiento': editarMovimiento(id); break;
+      case 'del-movimiento': eliminarMovimiento(id); break;
+      case 'edit-titulo': editarTitulo(btn.dataset.key); break;
+      case 'toggle-mes': mesesAbiertos[btn.dataset.mes] = !mesesAbiertos[btn.dataset.mes]; renderDecide(); break;
     }
   });
   document.getElementById('tabs').addEventListener('click', function(e){
@@ -1100,9 +1468,11 @@
     reader.readAsText(file);
     e.target.value = '';
   });
+  document.getElementById('btn-export-csv').onclick = exportCSV;
   document.getElementById('btn-signout').onclick = function(){
     if (RaccoonStore.mode() === 'cloud') RaccoonStore.signOut();
   };
+  document.getElementById('fab-gasto').onclick = nuevoMovimiento;
 
   /* ---------- inicio ---------- */
   wireGate();

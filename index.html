@@ -85,7 +85,7 @@
     <button data-tab="flujo">Ingresos y gastos</button>
     <button data-tab="pendientes">Deudas</button>
     <button data-tab="metas">Metas y fondo</button>
-    <button data-tab="decide">¿Lo compro?</button>
+    <button data-tab="decide">Registro</button>
     <button data-tab="historial">Historial</button>
   </nav>
 
@@ -103,9 +103,19 @@
   <div class="backup-row">
     <button class="ghost-btn tiny" id="btn-export">Exportar respaldo</button>
     <button class="ghost-btn tiny" id="btn-import">Importar respaldo</button>
+    <button class="ghost-btn tiny" id="btn-export-csv">Exportar CSV</button>
     <input type="file" id="file-import" accept="application/json" style="display:none">
   </div>
 </div>
+</div>
+
+<button class="fab hidden" id="fab-gasto" aria-label="Registrar gasto" title="Registrar gasto">+</button>
+
+<div class="celebrate hidden" id="celebrate">
+  <div class="celebrate-card">
+    <div class="celebrate-raccoon"></div>
+    <div class="celebrate-text" id="celebrate-text">¡Lo lograste!</div>
+  </div>
 </div>
 
 <div class="modal-overlay hidden" id="modal-overlay">
