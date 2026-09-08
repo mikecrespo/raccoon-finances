@@ -722,16 +722,10 @@
     });
   }
 
-  /* ---------- acción: renombrar títulos de sección ---------- */
-  function editarTitulo(key){
-    openModal('Nombre de la sección', [
-      { key: 'titulo', label: 'Título', type: 'text' }
-    ], { titulo: tituloDe(key) }, function(v){
-      var t = (v.titulo || '').trim();
-      if (t && t !== TITULOS_DEFAULT[key]) state.titulos[key] = t;
-      else delete state.titulos[key];
-      persist(); toast('Título actualizado.');
-    });
+  /* lápiz para editar un elemento (meta, fondo, deuda, inversión) junto a su nombre */
+  function h4Pencil(act, id){
+    return ' <button class="h4-edit" data-act="' + act + '"' + (id ? ' data-id="' + id + '"' : '') +
+      ' title="Editar" aria-label="Editar">' + PENCIL_SVG + '</button>';
   }
 
   /* ---------- exportar CSV (todo, por bloques) ---------- */
@@ -819,12 +813,6 @@
     var fab = document.getElementById('fab-gasto');
     if (fab) fab.classList.toggle('hidden', activeTab !== 'resumen');
   }
-  /* botón lápiz para renombrar el título de una sección */
-  function tituloEditable(key){
-    return '<h3>' + escapeHtml(tituloDe(key)) +
-      '<button class="ti-edit" data-act="edit-titulo" data-key="' + key + '" title="Renombrar" aria-label="Renombrar">' + PENCIL_SVG + '</button></h3>';
-  }
-
   /* ---------- render: resumen ---------- */
   function ringSvg(pct, color){
     pct = Math.max(0, Math.min(100, pct));
@@ -981,7 +969,7 @@
     var sub = [];
     if (p.quien) sub.push((p.tipo === 'cobrar' ? 'De: ' : 'A: ') + escapeHtml(p.quien));
     if (p.motivo) sub.push(escapeHtml(p.motivo));
-    return '<div class="pending-card"><div class="pending-top"><h4>' + escapeHtml(p.nombre) + '</h4>' +
+    return '<div class="pending-card"><div class="pending-top"><h4>' + escapeHtml(p.nombre) + h4Pencil('edit-pendiente', p.id) + '</h4>' +
       (p.fechaLimite ? '<span class="pending-due' + (overdue ? '' : ' ok') + '">' + (overdue ? 'venció ' : 'vence ') + fechaCorta(p.fechaLimite) + '</span>' : '') + '</div>' +
       (sub.length ? '<div class="pending-sub" style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">' + sub.join(' · ') + '</div>' : '') +
       '<div class="bar-row" style="margin-bottom:0"><span class="bar-track"><span class="bar-fill" style="width:' + pct + '%;background:' + pctColor(pct) + '"></span></span>' +
@@ -989,7 +977,6 @@
       '<div class="pending-actions">' +
       '<button class="icon-btn" data-act="aportar-pendiente" data-id="' + p.id + '">Aportar</button>' +
       '<button class="icon-btn" data-act="hist-pendiente" data-id="' + p.id + '">Historial</button>' +
-      '<button class="icon-btn" data-act="edit-pendiente" data-id="' + p.id + '">Editar</button>' +
       '<button class="icon-btn danger" data-act="del-pendiente" data-id="' + p.id + '">Eliminar</button></div></div>';
   }
   function renderPendientes(){
@@ -1000,7 +987,7 @@
     var totalPagar = porPagar.reduce(function(s, p){ return s + Number(p.saldoActual); }, 0);
     var totalCobrar = porCobrar.reduce(function(s, p){ return s + Number(p.saldoActual); }, 0);
 
-    var out = '<div class="card"><div class="card-head">' + tituloEditable('deudasPagar') + '<button class="add-btn accent" id="btn-add-pendiente-pagar">+ Deuda</button></div>';
+    var out = '<div class="card"><div class="card-head">' + '<h3>' + escapeHtml(tituloDe('deudasPagar')) + '</h3>' + '<button class="add-btn accent" id="btn-add-pendiente-pagar">+ Deuda</button></div>';
     if (porPagar.length) {
       out += '<div class="mini-stats"><div class="stat-tile warn"><div class="label">Total por pagar</div><div class="value num">' + fmt(totalPagar) + '</div></div></div>';
     }
@@ -1008,7 +995,7 @@
     porPagar.forEach(function(p){ out += deudaCardHtml(p); });
     out += '</div>';
 
-    out += '<div class="card"><div class="card-head">' + tituloEditable('deudasCobrar') + '<button class="add-btn accent" id="btn-add-pendiente-cobrar">+ Cobro</button></div>';
+    out += '<div class="card"><div class="card-head">' + '<h3>' + escapeHtml(tituloDe('deudasCobrar')) + '</h3>' + '<button class="add-btn accent" id="btn-add-pendiente-cobrar">+ Cobro</button></div>';
     if (porCobrar.length) {
       out += '<div class="mini-stats"><div class="stat-tile good"><div class="label">Total por cobrar</div><div class="value num">' + fmt(totalCobrar) + '</div></div></div>';
     }
@@ -1042,7 +1029,7 @@
     var dedicadoAMetas = cta.dedicadoAMetas;
     var dedicadoAFondos = cta.dedicadoAFondos;
     var disponibleReal = cta.disponibleReal;
-    var out = '<div class="card"><div class="card-head">' + tituloEditable('cuentaBancaria') + '</div>';
+    var out = '<div class="card"><div class="card-head">' + '<h3>' + escapeHtml(tituloDe('cuentaBancaria')) + '</h3>' + '</div>';
     out += '<div class="mini-stats">' +
       '<div class="stat-tile"><div class="label">Apartado</div><div class="value num">' + fmt(apartado) + '</div></div>' +
       '<div class="stat-tile"><div class="label">Dedicado a metas</div><div class="value num">' + fmt(dedicadoAMetas) + '</div><div class="sub">ahorro consolidado en todas tus metas</div></div>' +
@@ -1061,20 +1048,20 @@
       return '<div class="goal-fecha' + (atr ? ' atrasada' : '') + '">' + escapeHtml(t) + '</div>';
     }
 
-    out += '<div class="card"><div class="card-head">' + tituloEditable('fondos') + '<button class="add-btn accent" id="btn-add-fondo-adicional">+ Fondo</button></div>';
+    out += '<div class="card"><div class="card-head">' + '<h3>' + escapeHtml(tituloDe('fondos')) + '</h3>' + '<button class="add-btn accent" id="btn-add-fondo-adicional">+ Fondo</button></div>';
     var fsCompleto = r.fondoObjetivo > 0 && r.fondoActual >= r.fondoObjetivo;
     out += '<div class="goal-grid"><div class="goal-card' + (fsCompleto ? ' completada' : '') + '">' +
-      '<h4>Fondo de seguridad</h4><div class="ring-wrap">' + ringSvg(r.fondoPct) + '<div class="ring-center">' + Math.round(r.fondoPct) + '%</div></div>' +
+      '<h4>Fondo de seguridad' + h4Pencil('edit-fondo-seguridad') + '</h4><div class="ring-wrap">' + ringSvg(r.fondoPct) + '<div class="ring-center">' + Math.round(r.fondoPct) + '%</div></div>' +
       '<div class="goal-amounts">' + fmt(r.fondoActual) + ' de ' + fmt(r.fondoObjetivo) + '</div>' +
       fechaLinea(state.fondoEmergencia.fechaObjetivo, fsCompleto) +
-      '<div class="goal-actions"><button class="icon-btn" id="btn-aportar-fondo">Aportar</button><button class="icon-btn" id="btn-retirar-fondo">Retirar</button><button class="icon-btn" data-act="hist-fondo-seguridad">Historial</button><button class="icon-btn" id="btn-editar-fondo">Editar</button></div>' +
+      '<div class="goal-actions"><button class="icon-btn" id="btn-aportar-fondo">Aportar</button><button class="icon-btn" id="btn-retirar-fondo">Retirar</button><button class="icon-btn" data-act="hist-fondo-seguridad">Historial</button></div>' +
       '</div>';
     state.fondosAdicionales.forEach(function(f){
       var fObjetivo = Number(f.montoObjetivo) || 0;
       var fPct = fObjetivo > 0 ? Math.min(100, Number(f.montoActual) / fObjetivo * 100) : 0;
       var fComp = fObjetivo > 0 && f.montoActual >= fObjetivo;
       var fAmounts = fObjetivo > 0 ? (fmt(f.montoActual) + ' de ' + fmt(fObjetivo)) : (fmt(f.montoActual) + ' — sin objetivo');
-      out += '<div class="goal-card' + (fComp ? ' completada' : '') + '"><h4>' + escapeHtml(f.nombre) + '</h4>' +
+      out += '<div class="goal-card' + (fComp ? ' completada' : '') + '"><h4>' + escapeHtml(f.nombre) + h4Pencil('editar-fondo-adicional', f.id) + '</h4>' +
         '<div class="ring-wrap">' + ringSvg(fPct) + '<div class="ring-center">' + Math.round(fPct) + '%</div></div>' +
         '<div class="goal-amounts">' + fAmounts + '</div>' +
         fechaLinea(f.fechaObjetivo, fComp) +
@@ -1082,14 +1069,13 @@
         '<button class="icon-btn" data-act="aportar-fondo-adicional" data-id="' + f.id + '">Aportar</button>' +
         '<button class="icon-btn" data-act="retirar-fondo-adicional" data-id="' + f.id + '">Retirar</button>' +
         '<button class="icon-btn" data-act="hist-fondo-adicional" data-id="' + f.id + '">Historial</button>' +
-        '<button class="icon-btn" data-act="editar-fondo-adicional" data-id="' + f.id + '">Editar</button>' +
         '<button class="icon-btn danger" data-act="del-fondo-adicional" data-id="' + f.id + '">Eliminar</button></div></div>';
     });
     out += '</div></div>';
 
     var faltantePorCompletar = state.metas.filter(function(m){ return !m.completada; })
       .reduce(function(s, m){ return s + Math.max(0, Number(m.montoObjetivo) - Number(m.montoActual)); }, 0);
-    out += '<div class="card"><div class="card-head">' + tituloEditable('metasAhorro') + '<button class="add-btn accent" id="btn-add-meta">+ Meta</button></div>';
+    out += '<div class="card"><div class="card-head">' + '<h3>' + escapeHtml(tituloDe('metasAhorro')) + '</h3>' + '<button class="add-btn accent" id="btn-add-meta">+ Meta</button></div>';
     if (state.metas.length) {
       out += '<div class="mini-stats"><div class="stat-tile' + (faltantePorCompletar > 0 ? ' warn' : ' good') + '"><div class="label">Falta por completar</div><div class="value num">' + fmt(faltantePorCompletar) + '</div><div class="sub">suma de todas tus metas activas</div></div></div>';
     }
@@ -1098,21 +1084,20 @@
       out += '<div class="goal-grid">';
       state.metas.forEach(function(m){
         var pct = m.montoObjetivo > 0 ? Math.min(100, m.montoActual / m.montoObjetivo * 100) : 0;
-        out += '<div class="goal-card' + (m.completada ? ' completada' : '') + '"><h4>' + escapeHtml(m.nombre) + '</h4>' +
+        out += '<div class="goal-card' + (m.completada ? ' completada' : '') + '"><h4>' + escapeHtml(m.nombre) + h4Pencil('edit-meta', m.id) + '</h4>' +
           '<div class="ring-wrap">' + ringSvg(pct) + '<div class="ring-center">' + Math.round(pct) + '%</div></div>' +
           '<div class="goal-amounts">' + fmt(m.montoActual) + ' de ' + fmt(m.montoObjetivo) + '</div>' +
           fechaLinea(m.fechaObjetivo, m.completada) +
           '<div class="goal-actions">' +
           (m.completada ? '' : '<button class="icon-btn" data-act="aportar-meta" data-id="' + m.id + '">Aportar</button>') +
           '<button class="icon-btn" data-act="hist-meta" data-id="' + m.id + '">Historial</button>' +
-          '<button class="icon-btn" data-act="edit-meta" data-id="' + m.id + '">Editar</button>' +
           '<button class="icon-btn danger" data-act="del-meta" data-id="' + m.id + '">Eliminar</button></div></div>';
       });
       out += '</div>';
     }
     out += '</div>';
 
-    out += '<div class="card"><div class="card-head">' + tituloEditable('inversiones') + '<button class="add-btn accent" id="btn-add-inversion">+ Inversión</button></div>';
+    out += '<div class="card"><div class="card-head">' + '<h3>' + escapeHtml(tituloDe('inversiones')) + '</h3>' + '<button class="add-btn accent" id="btn-add-inversion">+ Inversión</button></div>';
     if (!state.inversiones.length) { out += '<div class="empty-state">Sin inversiones registradas.</div>'; }
     else {
       out += '<div class="table-scroll"><table><thead><tr><th>Nombre</th><th class="num">Tasa anual</th><th class="num">Monto actual</th><th class="num">Rendimiento anual est.</th><th></th></tr></thead><tbody>';
@@ -1120,13 +1105,12 @@
         var tasa = Number(i.tasaInteres) || 0;
         var rendimiento = Number(i.montoActual) * (tasa / 100);
         var ft = faltanTexto(i.fechaObjetivo);
-        out += '<tr><td>' + escapeHtml(i.nombre) + (ft ? '<div class="goal-fecha' + (ft.indexOf('atrasada') !== -1 ? ' atrasada' : '') + '">' + escapeHtml(ft) + '</div>' : '') + '</td>' +
+        out += '<tr><td>' + escapeHtml(i.nombre) + h4Pencil('edit-inversion', i.id) + (ft ? '<div class="goal-fecha' + (ft.indexOf('atrasada') !== -1 ? ' atrasada' : '') + '">' + escapeHtml(ft) + '</div>' : '') + '</td>' +
           '<td class="num">' + (tasa ? tasa.toFixed(2) + '%' : '—') + '</td>' +
           '<td class="num">' + fmt(i.montoActual) + '</td><td class="num">' + (rendimiento ? fmt(rendimiento) : '—') + '</td>' +
           '<td><div class="row-actions">' +
           (rendimiento > 0 ? '<button class="icon-btn" data-act="reinvertir-inversion" data-id="' + i.id + '">Reinvertir</button>' : '') +
           '<button class="icon-btn" data-act="hist-inversion" data-id="' + i.id + '">Historial</button>' +
-          '<button class="icon-btn" data-act="edit-inversion" data-id="' + i.id + '">Editar</button>' +
           '<button class="icon-btn danger" data-act="del-inversion" data-id="' + i.id + '">Eliminar</button></div></td></tr>';
       });
       out += '</tbody></table></div>';
@@ -1139,7 +1123,6 @@
     document.getElementById('btn-ajustar-apartado').onclick = ajustarApartado;
     document.getElementById('btn-aportar-fondo').onclick = aportarFondo;
     document.getElementById('btn-retirar-fondo').onclick = retirarFondo;
-    document.getElementById('btn-editar-fondo').onclick = editarFondoSeguridad;
     document.getElementById('btn-add-fondo-adicional').onclick = nuevoFondoAdicional;
     document.getElementById('btn-add-meta').onclick = nuevaMeta;
     document.getElementById('btn-add-inversion').onclick = nuevaInversion;
@@ -1420,7 +1403,7 @@
       case 'hist-fondo-seguridad': historialFondoSeguridad(); break;
       case 'edit-movimiento': editarMovimiento(id); break;
       case 'del-movimiento': eliminarMovimiento(id); break;
-      case 'edit-titulo': editarTitulo(btn.dataset.key); break;
+      case 'edit-fondo-seguridad': editarFondoSeguridad(); break;
       case 'toggle-mes': mesesAbiertos[btn.dataset.mes] = !mesesAbiertos[btn.dataset.mes]; renderDecide(); break;
     }
   });

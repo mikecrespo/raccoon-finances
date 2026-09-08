@@ -1,6 +1,6 @@
 /* Service worker de Raccoon Finances.
  * Sube el número de versión (CACHE) cada vez que cambies archivos del "shell". */
-const CACHE = 'raccoon-v8';
+const CACHE = 'raccoon-v9';
 
 const SHELL = [
   './',
