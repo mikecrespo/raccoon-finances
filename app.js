@@ -14,10 +14,15 @@
 
   /* ---------- estado ---------- */
   var CATEGORIAS_DEFAULT = [
+    'Despensa', 'Antojos', 'Transporte', 'Servicios', 'Salud',
+    'Cuidado personal', 'Entretenimiento', 'Salidas', 'Otros'
+  ];
+  var CATEGORIAS_PREVIAS = [
     'Súper / Despensa', 'Restaurantes / Antojos', 'Transporte', 'Servicios / Casa',
     'Suscripciones', 'Salud', 'Personal / Cuidado', 'Entretenimiento / Salidas',
     'Regalos / Detalles', 'Otros'
   ];
+  var CAT_COLORS = ['#E4572E', '#F2A541', '#3D7A50', '#4E8FBF', '#8E6FB3', '#D96BA0', '#5FB0A6', '#B0592B', '#8A8F84', '#6C6F68'];
   var TITULOS_DEFAULT = {
     cuentaBancaria: 'Cuenta bancaria',
     fondos: 'Fondos',
@@ -54,6 +59,7 @@
     if (!Array.isArray(state.decisiones)) state.decisiones = [];
     if (!Array.isArray(state.movimientos)) state.movimientos = [];
     if (!Array.isArray(state.categorias) || !state.categorias.length) state.categorias = CATEGORIAS_DEFAULT.slice();
+    if (state.categorias.join('|') === CATEGORIAS_PREVIAS.join('|')) state.categorias = CATEGORIAS_DEFAULT.slice();
     if (!state.titulos || typeof state.titulos !== 'object') state.titulos = {};
     state.metas.forEach(function(m){ if (!Array.isArray(m.aportes)) m.aportes = []; if (m.fechaObjetivo == null) m.fechaObjetivo = ''; });
     state.pendientes.forEach(function(p){
@@ -131,6 +137,30 @@
 
   var PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>';
 
+  /* gráfico de dona: gasto por categoría */
+  function donutHtml(porCat, total){
+    if (!total || total <= 0) return '';
+    var cats = Object.keys(porCat).sort(function(a, b){ return porCat[b] - porCat[a]; });
+    var acc = 0, r = 15.915, segs = '', legend = '';
+    cats.forEach(function(c, idx){
+      var val = Number(porCat[c]);
+      var pct = val / total * 100;
+      var color = CAT_COLORS[idx % CAT_COLORS.length];
+      segs += '<circle cx="21" cy="21" r="' + r + '" fill="transparent" stroke="' + color + '" stroke-width="7" ' +
+        'stroke-dasharray="' + pct.toFixed(3) + ' ' + (100 - pct).toFixed(3) + '" stroke-dashoffset="' + ((25 - acc + 100) % 100).toFixed(3) + '"></circle>';
+      acc += pct;
+      legend += '<div class="donut-leg"><span class="donut-dot" style="background:' + color + '"></span>' +
+        '<span class="donut-cat">' + escapeHtml(c) + '</span>' +
+        '<span class="num">' + fmt(val) + '</span>' +
+        '<span class="donut-pct">' + Math.round(pct) + '%</span></div>';
+    });
+    return '<div class="donut-wrap">' +
+      '<svg class="donut" viewBox="0 0 42 42" aria-hidden="true">' +
+      '<circle cx="21" cy="21" r="' + r + '" fill="transparent" stroke="var(--line-soft)" stroke-width="7"></circle>' +
+      segs + '</svg>' +
+      '<div class="donut-legend">' + legend + '</div></div>';
+  }
+
   /* modal de solo lectura (historial de pagos/aportes) */
   function openInfoModal(title, bodyHtml){
     var overlay = document.getElementById('modal-overlay');
@@ -142,15 +172,18 @@
     overlay.onclick = function(e){ if (e.target === overlay) closeModal(); };
   }
 
-  /* celebración: mapache bailando ~3 s */
+  /* celebración: mapache bailando ~3.5 s */
   function celebrate(msg){
     var el = document.getElementById('celebrate');
     if (!el) return;
     document.getElementById('celebrate-text').textContent = msg || '¡Lo lograste!';
+    el.onclick = null;                 // evita que un "tap fantasma" del guardado lo cierre al instante (móvil)
     el.classList.remove('hidden');
     clearTimeout(celebrate._h);
-    celebrate._h = setTimeout(function(){ el.classList.add('hidden'); }, 3000);
-    el.onclick = function(){ clearTimeout(celebrate._h); el.classList.add('hidden'); };
+    celebrate._h = setTimeout(function(){ el.classList.add('hidden'); }, 3500);
+    setTimeout(function(){
+      el.onclick = function(){ clearTimeout(celebrate._h); el.classList.add('hidden'); };
+    }, 600);
   }
   function toast(msg){
     var t = document.getElementById('toast');
@@ -217,6 +250,12 @@
         html += '</select>';
       } else if (f.type === 'textarea') {
         html += '<textarea id="f-' + f.key + '" rows="8" placeholder="' + escapeHtml(f.placeholder || '') + '">' + escapeHtml(val) + '</textarea>';
+      } else if (f.type === 'chips') {
+        html += '<div class="chip-field" id="f-' + f.key + '" data-value="' + escapeHtml(val || '') + '">';
+        f.options.forEach(function(o){
+          html += '<button type="button" class="chip-opt' + (o.value === val ? ' on' : '') + '" data-v="' + escapeHtml(o.value) + '">' + escapeHtml(o.label) + '</button>';
+        });
+        html += '</div>';
       } else {
         html += '<input id="f-' + f.key + '" type="' + f.type + '"' +
           (f.step ? ' step="' + f.step + '"' : '') + (f.min != null ? ' min="' + f.min + '"' : '') +
@@ -227,6 +266,15 @@
     html += '<div class="modal-actions"><button class="cancel" id="modal-cancel">Cancelar</button><button class="save" id="modal-save">' + (opts.saveLabel || 'Guardar') + '</button></div>';
     box.innerHTML = html;
     overlay.classList.remove('hidden');
+    box.querySelectorAll('.chip-field').forEach(function(cf){
+      cf.addEventListener('click', function(e){
+        var b = e.target.closest('.chip-opt');
+        if (!b) return;
+        cf.querySelectorAll('.chip-opt').forEach(function(x){ x.classList.remove('on'); });
+        b.classList.add('on');
+        cf.dataset.value = b.dataset.v;
+      });
+    });
     document.getElementById('modal-cancel').onclick = closeModal;
     overlay.onclick = function(e){ if (e.target === overlay) closeModal(); };
     document.getElementById('modal-save').onclick = function(){
@@ -234,7 +282,7 @@
       var ok = true;
       fields.forEach(function(f){
         var el = document.getElementById('f-' + f.key);
-        var v = el.value;
+        var v = (f.type === 'chips') ? (el.dataset.value || '') : el.value;
         if (f.type === 'number') {
           v = parseFloat(v);
           if (isNaN(v) || (f.min != null && v < f.min)) ok = false;
@@ -384,7 +432,7 @@
       it.saldoActual = Math.max(0, Number(it.saldoActual) - v.monto);
       if (!Array.isArray(it.pagos)) it.pagos = [];
       it.pagos.push({ fecha: hoyISO(), monto: v.monto });
-      if (it.saldoActual === 0) { it.resuelto = true; it.fechaResuelto = hoyISO(); }
+      if (it.saldoActual <= 0.005) { it.saldoActual = 0; it.resuelto = true; if (!it.fechaResuelto) it.fechaResuelto = hoyISO(); }
       persist();
       if (it.resuelto && !yaResuelto) celebrate(esCobrar ? '¡Cobrado por completo!' : '¡Deuda saldada!');
       else toast('Aporte registrado.');
@@ -404,6 +452,7 @@
       { key: 'fechaLimite', label: 'Fecha límite (opcional)', type: 'date', required: false }
     ], { tipo: it.tipo, nombre: it.nombre, quien: it.quien, motivo: it.motivo,
          montoOriginal: it.montoOriginal, saldoActual: it.saldoActual, fechaLimite: it.fechaLimite || '' }, function(v){
+      var yaResuelto = !!it.resuelto;
       it.tipo = v.tipo;
       it.nombre = v.nombre.trim().toUpperCase();
       it.quien = (v.quien || '').trim();
@@ -413,7 +462,9 @@
       it.fechaLimite = v.fechaLimite || '';
       it.resuelto = Number(it.saldoActual) <= 0;
       it.fechaResuelto = it.resuelto ? (it.fechaResuelto || hoyISO()) : '';
-      persist(); toast('Deuda actualizada.');
+      persist();
+      if (it.resuelto && !yaResuelto) celebrate(it.tipo === 'cobrar' ? '¡Cobrado por completo!' : '¡Deuda saldada!');
+      else toast('Deuda actualizada.');
     });
   }
   function historialPendiente(id){
@@ -473,12 +524,15 @@
       { key: 'montoActual', label: 'Monto actual (ahorrado)', type: 'number', step: '1', min: 0 },
       { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
     ], { nombre: it.nombre, montoObjetivo: it.montoObjetivo, montoActual: it.montoActual, fechaObjetivo: it.fechaObjetivo || '' }, function(v){
+      var yaEstaba = !!it.completada;
       it.nombre = v.nombre.trim().toUpperCase();
       it.montoObjetivo = v.montoObjetivo;
       it.montoActual = v.montoActual;
       it.fechaObjetivo = v.fechaObjetivo || '';
       it.completada = it.montoObjetivo > 0 && it.montoActual >= it.montoObjetivo;
-      persist(); toast('Meta actualizada.');
+      persist();
+      if (it.completada && !yaEstaba) celebrate('¡Meta completada! ' + it.nombre);
+      else toast('Meta actualizada.');
     });
   }
   function historialMeta(id){
@@ -507,10 +561,14 @@
       { key: 'montoActual', label: 'Monto actual', type: 'number', step: '1', min: 0 },
       { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
     ], { montoObjetivo: state.fondoEmergencia.montoObjetivo, montoActual: state.fondoEmergencia.montoActual, fechaObjetivo: state.fondoEmergencia.fechaObjetivo || '' }, function(v){
+      var yaCompleto = state.fondoEmergencia.montoObjetivo > 0 && Number(state.fondoEmergencia.montoActual) >= state.fondoEmergencia.montoObjetivo;
       state.fondoEmergencia.montoObjetivo = v.montoObjetivo;
       state.fondoEmergencia.montoActual = v.montoActual;
       state.fondoEmergencia.fechaObjetivo = v.fechaObjetivo || '';
-      persist(); toast('Fondo de seguridad actualizado.');
+      var completoAhora = v.montoObjetivo > 0 && v.montoActual >= v.montoObjetivo;
+      persist();
+      if (completoAhora && !yaCompleto) celebrate('¡Fondo de seguridad completo!');
+      else toast('Fondo de seguridad actualizado.');
     });
   }
 
@@ -612,11 +670,15 @@
       { key: 'montoObjetivo', label: 'Monto objetivo (0 = sin objetivo)', type: 'number', step: '1', min: 0 },
       { key: 'fechaObjetivo', label: 'Fecha objetivo (opcional)', type: 'date', required: false }
     ], { nombre: f.nombre, montoActual: f.montoActual, montoObjetivo: f.montoObjetivo, fechaObjetivo: f.fechaObjetivo || '' }, function(v){
+      var yaCompleto = f.montoObjetivo > 0 && Number(f.montoActual) >= f.montoObjetivo;
       f.nombre = v.nombre.trim();
       f.montoActual = v.montoActual;
       f.montoObjetivo = v.montoObjetivo;
       f.fechaObjetivo = v.fechaObjetivo || '';
-      persist(); toast('Fondo actualizado.');
+      var completoAhora = f.montoObjetivo > 0 && f.montoActual >= f.montoObjetivo;
+      persist();
+      if (completoAhora && !yaCompleto) celebrate('¡Fondo completo! ' + f.nombre);
+      else toast('Fondo actualizado.');
     });
   }
   function eliminarFondoAdicional(id){
@@ -680,9 +742,9 @@
   /* ---------- acciones: registro de gastos (movimientos) ---------- */
   function camposMovimiento(){
     return [
-      { key: 'monto', label: 'Monto', type: 'number', step: '1', min: 0.01 },
-      { key: 'categoria', label: 'Categoría', type: 'select', options: state.categorias.map(function(c){ return { value: c, label: c }; }) },
       { key: 'motivo', label: 'Motivo', type: 'text', placeholder: 'En qué lo gastaste', required: false },
+      { key: 'monto', label: 'Monto', type: 'number', step: '1', min: 0.01 },
+      { key: 'categoria', label: 'Categoría', type: 'chips', options: state.categorias.map(function(c){ return { value: c, label: c }; }) },
       { key: 'fecha', label: 'Fecha', type: 'date' }
     ];
   }
@@ -1173,7 +1235,9 @@
       Object.keys(porCat).sort(function(a, b){ return porCat[b] - porCat[a]; }).forEach(function(c){
         s += '<div class="mov-tot-row"><span>' + escapeHtml(c) + '</span><span class="num">' + fmt(porCat[c]) + '</span></div>';
       });
-      s += '<div class="mov-tot-row grand"><span>Total del mes</span><span class="num">' + fmt(total) + '</span></div></div></div>';
+      s += '<div class="mov-tot-row grand"><span>Total del mes</span><span class="num">' + fmt(total) + '</span></div>';
+      s += donutHtml(porCat, total);
+      s += '</div></div>';
       return s;
     }
 
