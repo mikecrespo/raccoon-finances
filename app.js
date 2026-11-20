@@ -214,7 +214,12 @@
     var r = resumen();
     var fondoCompleto = r.fondoObjetivo > 0 && r.fondoActual >= r.fondoObjetivo;
     var veredicto, color, detalle;
-    if (r.disponible <= 0) {
+    if (calcCuenta().disponibleReal <= 0) {
+      veredicto = 'Todavía no'; color = 'bad';
+      detalle = fondoCompleto
+        ? 'No tienes dinero libre: todo lo apartado ya está asignado a metas y fondos.'
+        : 'Tu fondo de emergencia va en ' + Math.round(r.fondoPct) + '% — mientras no esté completo, no hay dinero libre para esto.';
+    } else if (r.disponible <= 0) {
       veredicto = 'Todavía no'; color = 'bad';
       detalle = 'Tus gastos fijos igualan o superan tus ingresos este mes — no hay margen libre para esto.';
     } else if (monto <= r.disponible * 0.3 && fondoCompleto) {
@@ -846,7 +851,11 @@
     var dedicadoAFondoSeguridad = Number(state.fondoEmergencia.montoActual) || 0;
     var dedicadoAFondosAdicionales = state.fondosAdicionales.reduce(function(s, f){ return s + (Number(f.montoActual) || 0); }, 0);
     var dedicadoAFondos = dedicadoAFondoSeguridad + dedicadoAFondosAdicionales;
-    var disponibleReal = apartado - (dedicadoAMetas + dedicadoAFondos);
+    /* El fondo de seguridad cuenta COMPLETO (su objetivo) hasta que se llene: mientras no esté
+       completo, no hay dinero realmente libre. Nunca se muestra negativo. */
+    var objetivoFondo = Number(state.fondoEmergencia.montoObjetivo) || 0;
+    var reservaFondoSeguridad = Math.max(objetivoFondo, dedicadoAFondoSeguridad);
+    var disponibleReal = Math.max(0, apartado - (dedicadoAMetas + reservaFondoSeguridad + dedicadoAFondosAdicionales));
     return {
       apartado: apartado, dedicadoAMetas: dedicadoAMetas,
       dedicadoAFondoSeguridad: dedicadoAFondoSeguridad, dedicadoAFondosAdicionales: dedicadoAFondosAdicionales,
